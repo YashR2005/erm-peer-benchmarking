@@ -82,7 +82,8 @@ def make_llm(setup: StandardSetup, store: RunStore | None = None) -> LLM:
         return ClaudeLLM(model=setup.model, system=system, log=log,
                          web_search_tool=cfg.get("web_search", "web_search_20250305"),
                          web_fetch_tool=cfg.get("web_fetch", "web_fetch_20250910"),
-                         max_fetch_tokens=setup.max_fetch_tokens, budget=budget)
+                         max_fetch_tokens=setup.max_fetch_tokens, budget=budget,
+                         server_fallback=setup.model in cfg.get("server_fallback_models", []))
     if setup.provider == "openrouter":
         from .llm_openrouter import OpenRouterLLM
 

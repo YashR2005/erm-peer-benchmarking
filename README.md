@@ -9,7 +9,7 @@ An AI-assisted workflow that profiles a client from live public sources, propose
 
 Every finding links to a verbatim quote and page, checked against the PDF text by code. Consultants confirm peers, sources and findings.
 
-**Status:** Product A prototype with a web app (React frontend, FastAPI backend) and an assistant chat over the fixed steps. Live runs need OpenRouter credits; the browser and Python tests run offline with a fake model.
+**Status:** Product A prototype with a web app (React frontend, FastAPI backend) and an assistant chat over the fixed steps. Live runs use the Claude API; the browser and Python tests run offline with a fake model.
 
 - [docs/flow/user-flow-v2.md](docs/flow/user-flow-v2.md): the user flow this code implements (v2.1)
 - [docs/flow/erm-benchmark-flow-v1.2.drawio](docs/flow/erm-benchmark-flow-v1.2.drawio): the workflow diagram shown to Marsh on 15 Oct
@@ -19,7 +19,7 @@ Confidential Marsh material (the vision document, meeting notes, sample reports)
 
 ## Running it
 
-Needs Python 3.11+, [uv](https://docs.astral.sh/uv/) and an [OpenRouter](https://openrouter.ai/keys) API key. The default model is NVIDIA Nemotron 3.5 Super VL, set in `setup/v1/method.yaml`; web search runs through OpenRouter's server-side search tool. Claude is also supported: set `ERM_LLM_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` in `.env`.
+Needs Python 3.11+, [uv](https://docs.astral.sh/uv/) and a Claude API key (`ANTHROPIC_API_KEY` in `.env`). The model is **Claude Sonnet 5.5** by default; set `ERM_LLM_MODEL=claude-haiku-5-5` in `.env` for the cheaper Haiku 5.5. Only these two are allowed (`llm.allowed_models` in `setup/v1/method.yaml`): any other model stops the app at startup. Web search uses Claude's web search tool with citations.
 
 ```bash
 uv sync
@@ -68,7 +68,7 @@ src/erm_bench/
   pipeline.py    the fixed stages and checkpoints of the user flow
   chat.py        chat over those stages (turns messages into stage actions)
   llm.py         LLM interface and the Claude backend: web research with API citations, structured outputs
-  llm_openrouter.py  OpenRouter backend (Nemotron by default): same two kinds of call
+  llm_openrouter.py  OpenRouter backend, kept for later (not in the allowed models)
   documents.py   download, per-page text, company/year checks, risk-section locator
   verify.py      quote-on-page verifier
   product_a.py   coverage matrix, gaps, category structure comparison (plain code)

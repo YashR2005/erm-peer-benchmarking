@@ -258,7 +258,9 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
                static_dir: Path | None = FRONTEND_DIST) -> FastAPI:
     setup = setup or StandardSetup.load()
     jobs = Jobs()
-    app = FastAPI(title="ERM Peer Benchmarking", docs_url="/api/docs",
+    # Reading setup.model here fails at startup if the configured model isn't allowed.
+    app = FastAPI(title="ERM Peer Benchmarking", description=f"Model: {setup.model}",
+                  docs_url="/api/docs",
                   openapi_url="/api/openapi.json", redoc_url=None)
     api = APIRouter(prefix="/api")
 

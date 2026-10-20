@@ -67,7 +67,13 @@ class StandardSetup:
 
     @property
     def model(self) -> str:
-        return os.environ.get("ERM_LLM_MODEL") or self.method["llm"]["models"][self.provider]
+        model = os.environ.get("ERM_LLM_MODEL") or self.method["llm"]["models"][self.provider]
+        allowed = self.method["llm"].get("allowed_models")
+        if allowed and model not in allowed:
+            raise ValueError(f"Model '{model}' ({self.provider}) is not allowed. Use one of "
+                             f"{', '.join(allowed)} (llm.allowed_models in setup/{self.version}/"
+                             "method.yaml; ERM_LLM_PROVIDER / ERM_LLM_MODEL in .env).")
+        return model
 
     def provider_settings(self) -> dict:
         return self.method["llm"].get(self.provider, {})

@@ -127,16 +127,22 @@ def test_truncation_and_refusal():
         llm.research(stage="profile", prompt_name="x", prompt="p", effort="low")
 
 
-def test_make_llm_picks_the_configured_backend(setup, monkeypatch):
+def test_only_sonnet_or_haiku_can_run(setup, monkeypatch):
     monkeypatch.delenv("ERM_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("ERM_LLM_MODEL", raising=False)
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    assert setup.provider == "openrouter" and setup.model == "nvidia/nemotron-3.5-super-vl"
-    with pytest.raises(LLMError, match="OPENROUTER_API_KEY"):
-        make_llm(setup)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
-    assert isinstance(make_llm(setup), OpenRouterLLM)
-    monkeypatch.setenv("ERM_LLM_PROVIDER", "anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    llm = make_llm(setup)                                       # default: Sonnet 5.5
+    assert isinstance(llm, ClaudeLLM) and llm.model == "claude-sonnet-5-5" and llm.server_fallback
+
+    monkeypatch.setenv("ERM_LLM_MODEL", "claude-haiku-5-5")
     llm = make_llm(setup)
-    assert isinstance(llm, ClaudeLLM) and llm.model == "claude-opus-5-5"
+    assert llm.model == "claude-haiku-5-5" and not llm.server_fallback   # Haiku has none
+
+    monkeypatch.setenv("ERM_LLM_MODEL", "claude-opus-5-5")
+    with pytest.raises(ValueError, match="not allowed"):
+        make_llm(setup)
+
+    monkeypatch.delenv("ERM_LLM_MODEL")
+    monkeypatch.setenv("ERM_LLM_PROVIDER", "openrouter")
+    with pytest.raises(ValueError, match="nemotron.*not allowed"):
+        make_llm(setup)

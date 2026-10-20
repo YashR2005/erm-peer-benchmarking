@@ -3,14 +3,19 @@
 version: v1
 name: ERM benchmark method v1 (phase 1, Product A)
 
-# Which model runs the AI stages. Override per machine with ERM_LLM_PROVIDER / ERM_LLM_MODEL
-# in .env; every run records the provider and model it used.
+# Which model runs the AI stages: Claude Sonnet 5.5 by default. ERM_LLM_MODEL in .env can switch
+# to Haiku 5.5. Only the models in allowed_models can run: anything else (e.g. Opus) stops the app
+# at startup. Every run records the model it used.
 llm:
-  provider: openrouter          # openrouter | anthropic
+  provider: anthropic
   models:
-    openrouter: nvidia/nemotron-3.5-super-vl
-    anthropic: claude-opus-5-5
+    anthropic: claude-sonnet-5-5
+    openrouter: nvidia/nemotron-3.5-super-vl   # not in allowed_models, so it can't run
+  allowed_models: [claude-sonnet-5-5, claude-haiku-5-5]
   anthropic:
+    # If Sonnet 5.5 declines a request (rare, e.g. cyber-type content), the API retries it on
+    # Claude Sonnet 5. Haiku 5.5 has no server-side fallback, so none is requested for it.
+    server_fallback_models: [claude-sonnet-5-5]
     # The basic web tools return citations (URL + cited text) on the answer, which the pipeline
     # needs to source each fact. The dynamic-filtering versions (..._20260209) filter results in
     # a code sandbox and return the answer without citations (checked 20 Oct 2026).

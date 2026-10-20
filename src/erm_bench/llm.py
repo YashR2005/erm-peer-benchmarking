@@ -132,8 +132,10 @@ class ClaudeLLM:
                  client: anthropic.Anthropic | None = None,
                  web_search_tool: str = "web_search_20250305",
                  web_fetch_tool: str = "web_fetch_20250910", max_fetch_tokens: int = 6000,
-                 budget: Budget | None = None, clock: Clock | None = None):
+                 budget: Budget | None = None, clock: Clock | None = None,
+                 server_fallback: bool = True):
         self.model = model
+        self.server_fallback = server_fallback
         self.budget = budget
         self.clock = clock
         self.system = system
@@ -197,12 +199,13 @@ class ClaudeLLM:
         limit, message = self.clock.call_limit(stage) if self.clock else (None, "")
         client = self.client.with_options(timeout=limit) if limit else self.client
         started = time.monotonic()
+        # Server-side fallback on a refusal, for models that have one (not Haiku 5.5).
+        fallback = {"betas": [FALLBACK_BETA], "fallbacks": "default"} if self.server_fallback else {}
         with client.beta.messages.stream(
             model=self.model,
             max_tokens=MAX_TOKENS,
             system=self.system,
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
+            **fallback,
             **params,
         ) as stream:
             for _event in stream:

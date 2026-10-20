@@ -91,3 +91,13 @@ def test_structured_truncated_output_raises():
     with pytest.raises(LLMError, match="max_tokens"):
         llm.structured(stage="extract:P1", prompt_name="x", prompt="p", schema=RequestDraft,
                        effort="high")
+
+
+def test_no_fallback_requested_for_haiku():
+    messages = FakeMessages(message([], parsed=RequestDraft(
+        client_name="CDL", reporting_year=None, sector=None, focus_regions=[], notes=None,
+        peer_count=None, market_cap_bucket=None, include=[], exclude=[], missing=[])))
+    llm = ClaudeLLM("claude-haiku-5-5", "system", client=NS(beta=NS(messages=messages)),
+                    server_fallback=False)
+    llm.structured(stage="request", prompt_name="x", prompt="p", schema=RequestDraft, effort="low")
+    assert "fallbacks" not in messages.calls[0] and "betas" not in messages.calls[0]
