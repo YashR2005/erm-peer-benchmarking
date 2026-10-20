@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from .schemas import Source
 from .spend import Budget
+from .timing import Clock, TimeLimitExceeded
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -131,9 +132,10 @@ class ClaudeLLM:
                  client: anthropic.Anthropic | None = None,
                  web_search_tool: str = "web_search_20250305",
                  web_fetch_tool: str = "web_fetch_20250910", max_fetch_tokens: int = 6000,
-                 budget: Budget | None = None):
+                 budget: Budget | None = None, clock: Clock | None = None):
         self.model = model
         self.budget = budget
+        self.clock = clock
         self.system = system
         self.log = log or (lambda record: None)
         self.client = client or anthropic.Anthropic()
@@ -155,7 +157,7 @@ class ClaudeLLM:
                 tools.append({"type": self.web_fetch_tool, "name": "web_fetch",
                               "max_uses": max_fetches, "max_content_tokens": self.max_fetch_tokens})
             messages = [user] if not blocks else [user, {"role": "assistant", "content": blocks}]
-            final = self._stream(messages=messages, tools=tools, output_config={"effort": effort})
+            final = self._stream(stage, messages=messages, tools=tools, output_config={"effort": effort})
             usage.append(final.usage.to_dict())
             if self.budget:
                 self.budget.record(final.model, usage[-1:])
@@ -175,7 +177,7 @@ class ClaudeLLM:
         started = time.monotonic()
         if self.budget:
             self.budget.check()
-        final = self._stream(messages=[{"role": "user", "content": prompt}],
+        final = self._stream(stage, messages=[{"role": "user", "content": prompt}],
                              output_format=schema, output_config={"effort": effort})
         if self.budget:
             self.budget.record(final.model, [final.usage.to_dict()])
@@ -191,8 +193,11 @@ class ClaudeLLM:
 
     # Internals
 
-    def _stream(self, **params):
-        with self.client.beta.messages.stream(
+    def _stream(self, stage: str, **params):
+        limit, message = self.clock.call_limit(stage) if self.clock else (None, "")
+        client = self.client.with_options(timeout=limit) if limit else self.client
+        started = time.monotonic()
+        with client.beta.messages.stream(
             model=self.model,
             max_tokens=MAX_TOKENS,
             system=self.system,
@@ -200,6 +205,9 @@ class ClaudeLLM:
             fallbacks="default",
             **params,
         ) as stream:
+            for _event in stream:
+                if limit and time.monotonic() - started > limit:
+                    raise TimeLimitExceeded(message)  # leaving the block closes the connection
             return stream.get_final_message()
 
     @staticmethod

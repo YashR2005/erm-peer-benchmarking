@@ -148,7 +148,7 @@ export function RunPage({ runId, setup, navigate, onChanged }:
 
     <div className={`workspace ${assistantOpen ? '' : 'no-assistant'}`}>
       <div className="stack" style={{ minWidth: 0 }}>
-        {running && job && <ProgressCard job={job} client={state.request.client_name} />}
+        {running && job && <ProgressCard job={job} client={state.request.client_name} limits={setup?.time_limits} />}
         {!running && job?.error && <div className="note red" role="alert"><TriangleAlert size={16} />
           <div className="grow"><strong>The last step failed.</strong> {job.error}</div>
           {interrupted && <button className="btn small" onClick={() => perform(() => api.resume(run.run_id))}><RotateCcw size={14} />Try again</button>}

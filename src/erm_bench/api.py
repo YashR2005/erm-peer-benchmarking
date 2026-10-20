@@ -316,6 +316,7 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
                          "description": b.describe(setup.bucket_currency)} for b in setup.buckets],
             "taxonomy": setup.taxonomy,
             "default_peer_count": setup.method["peers"]["default_count"],
+            "time_limits": setup.method.get("time_limits", {}),
             "verify": setup.method["verify"],
         }
 

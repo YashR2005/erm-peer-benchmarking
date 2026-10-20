@@ -45,13 +45,19 @@ uv run pytest                              # pipeline, verifier, API
 cd frontend && npx playwright test         # browser tests (needs Google Chrome)
 ```
 
-## Spending limits
+## Spending and time limits
 
 Every run has a hard cap, set under `spending` in `setup/v1/method.yaml`: **$3.00 and 30 web
 searches per run** while we test. A run that reaches either stops with a message before its next
 model call; raise the limit and resume to continue. Research steps also have small search and
 fetch budgets, and fetched pages are cut to 5,000 tokens: research only finds sources, and our
 code reads the PDFs. Each run shows its estimated spend in the app.
+
+Time limits, under `time_limits` in the same file: **research 8 min, analysis 10 min, 4 min for any
+single model call**. A call that runs over is cut off, which also stops its billing. Each finished
+piece (profile, peers, each company's scan and extraction) is saved as it completes, so Try again
+continues from where a limit stopped the run instead of paying twice. Expected times with Sonnet
+5.5: research 3-4 min, analysis 3-4 min.
 
 ## How it's organised
 
@@ -68,6 +74,7 @@ src/erm_bench/
   product_a.py   coverage matrix, gaps, category structure comparison (plain code)
   export.py      Excel workbook
   spend.py       spending caps and cost estimates per run
+  timing.py      time limits per stage and per model call
   api.py         HTTP API for the frontend; long stages run as background jobs
 frontend/        React + Vite web app (Marsh branding), Playwright tests
 runs/<run id>/   one folder per run: stage outputs, downloaded PDFs, review and LLM logs

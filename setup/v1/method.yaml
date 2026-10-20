@@ -43,6 +43,14 @@ research:
     disclosure: {searches: 2, fetches: 1}   # client + ~6 candidates: ~14 searches in all
     peer_lookup: {searches: 3, fetches: 1}
 
+# Time limits in seconds. A stage that runs over stops with a message; what finished is saved,
+# so Try again continues from where it stopped. Expected with Sonnet 5.5 and the research caps
+# above: research 3-4 min, analysis 3-4 min (first uncapped Opus run: research ~9 min).
+time_limits:
+  research: 480      # 8 min: profile, peer scan, light disclosure scan (also add peer, re-scan)
+  analysis: 600      # 10 min: reading risk sections, mapping themes
+  per_call: 240      # 4 min: any single model call (a long risk section can take 2-3 min)
+
 # Spending limits while testing. A run that reaches a limit stops with a message before the
 # next model call; raise them here if a run needs more. Costs are estimates from the token
 # counts the API reports and these prices (USD).

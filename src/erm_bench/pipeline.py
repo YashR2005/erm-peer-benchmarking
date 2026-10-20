@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -57,6 +57,7 @@ from .schemas import (
 from .spend import Budget, BudgetExceeded
 from .standard_setup import StandardSetup
 from .store import DEFAULT_RUNS_DIR, RunStore, now_iso
+from .timing import Clock, TimeLimitExceeded
 from .verify import normalize_pages, verify_quote
 
 Progress = Callable[[str], None]
@@ -141,6 +142,10 @@ class Pipeline:
         self.fetch = fetch or (lambda url: docs.http_fetch(url, max_mb=max_mb))
         self.progress = progress or (lambda message: None)
         self.max_workers = max_workers
+        # One clock for this pipeline's stages, shared with the model backend's calls.
+        self.clock = Clock(per_call=setup.time_limit("per_call"))
+        if hasattr(llm, "clock"):
+            llm.clock = self.clock
 
     # ------------------------------------------------------------------
     # Creating and opening runs
@@ -211,22 +216,37 @@ class Pipeline:
     # Stage 2 · Research
 
     def research(self) -> None:
+        """Profile, peer scan and light disclosure scan. Each piece is saved when it finishes,
+        so running this again after a failure or time limit continues where it stopped."""
         self._set("researching")
         req = self.request
-        self.progress(f"Profiling {req.client_name} from live sources")
-        profile = self._profile(req)
-        self.store.save("profile", profile)
+        with self.clock.stage("research", self.setup.time_limit("research")):
+            if self.store.has("profile"):
+                profile = self.profile
+                self.progress("Using the client profile from the earlier attempt")
+            else:
+                self.progress(f"Profiling {req.client_name} from live sources")
+                profile = self._profile(req)
+                self.store.save("profile", profile)
 
-        self.progress("Scanning for listed peers")
-        peers = self._scan_peers(profile, req.market_cap_bucket, req.peer_count)
-        self.store.save("peers", peers)
+            if self.store.has("peers"):
+                peers = self.peers
+                self.progress("Using the peer candidates from the earlier attempt")
+            else:
+                self.progress("Scanning for listed peers")
+                peers = self._scan_peers(profile, req.market_cap_bucket, req.peer_count)
+                self.store.save("peers", peers)
 
-        targets = [(CLIENT, profile.short_name, [profile.legal_name, profile.short_name],
-                    profile.listing_label())]
-        targets += [(p.id, p.name, [p.legal_name, p.name], p.listing_label())
-                    for p in peers.candidates]
-        self.progress(f"Light disclosure scan: the client and {len(peers.candidates)} candidates")
-        self.store.save("documents", self._light_scan(targets))
+            scanned = {d.company_id for d in self.documents}
+            targets = [(CLIENT, profile.short_name, [profile.legal_name, profile.short_name],
+                        profile.listing_label())]
+            targets += [(p.id, p.name, [p.legal_name, p.name], p.listing_label())
+                        for p in peers.candidates]
+            targets = [t for t in targets if t[0] not in scanned]
+            if targets:
+                self.progress(f"Light disclosure scan: {len(targets)} "
+                              f"{'company' if len(targets) == 1 else 'companies'}")
+                self._light_scan(targets)
         self._set("awaiting_scope")
 
     def _profile(self, req: Request) -> Profile:
@@ -355,9 +375,22 @@ class Pipeline:
     # Light disclosure scan
 
     def _light_scan(self, targets: list[tuple[str, str, list[str], str]]) -> list[Document]:
+        """Scan companies in parallel, saving each company's documents as soon as it's done."""
+        found: list[Document] = []
+        error: Exception | None = None
         with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            results = list(pool.map(lambda t: self._scan_company(*t), targets))
-        return [d for company_docs in results for d in company_docs]
+            futures = [pool.submit(self._scan_company, *t) for t in targets]
+            for future in as_completed(futures):
+                try:
+                    company_docs = future.result()
+                except Exception as e:  # a spending or time limit: keep what others finished
+                    error = error or e
+                    continue
+                self.store.save("documents", self.documents + company_docs)
+                found += company_docs
+        if error:
+            raise error
+        return found
 
     def _scan_company(self, company_id: str, name: str, names: list[str],
                       listing: str) -> list[Document]:
@@ -374,13 +407,14 @@ class Pipeline:
                 prompt=s.prompt("disclosure_structure", company_name=name, notes=notes.text,
                                 citations=notes.citations_block()),
                 schema=DisclosureDraft, effort=s.effort("structure"))
-        except BudgetExceeded:
-            raise  # a spending cap stops the whole run
+        except (BudgetExceeded, TimeLimitExceeded):
+            raise  # spending and time limits stop the whole stage
         except Exception as e:  # one company's failure must not stop the scan
             return [Document(id=f"D-{company_id}-1", company_id=company_id,
                              doc_type="annual_report", title="(disclosure scan failed)",
                              status="download_failed", note=f"{type(e).__name__}: {e}")]
 
+        self.clock.check()  # don't start downloads after the stage's time limit
         found = [Document(id=f"D-{company_id}-{i}", company_id=company_id, doc_type=d.doc_type,
                           title=d.title, fiscal_year=d.fiscal_year, url=d.url)
                  for i, d in enumerate(draft.documents, start=1)]
@@ -514,6 +548,10 @@ class Pipeline:
 
     def add_peer(self, name: str) -> PeerCandidate:
         self._require_status("awaiting_scope")
+        with self.clock.stage("research", self.setup.time_limit("research")):
+            return self._add_peer(name)
+
+    def _add_peer(self, name: str) -> PeerCandidate:
         s, profile, peers = self.setup, self.profile, self.peers
         self.progress(f"Researching {name}")
         notes = self.llm.research(
@@ -535,9 +573,7 @@ class Pipeline:
         self.store.save("peers", peers)
         self.store.log_review("add_peer", cand.id, after=cand.name)
         self.progress(f"Light disclosure scan: {cand.name}")
-        new_docs = self._light_scan([(cand.id, cand.name, [cand.legal_name, cand.name],
-                                      cand.listing_label())])
-        self.store.save("documents", self.documents + new_docs)
+        self._light_scan([(cand.id, cand.name, [cand.legal_name, cand.name], cand.listing_label())])
         return cand
 
     def set_bucket(self, bucket: str | None) -> PeerSet:
@@ -545,18 +581,18 @@ class Pipeline:
         self._require_status("awaiting_scope")
         old = self.peers
         kept = [c for c in old.candidates if c.added_by == "consultant"]
-        self.progress("Re-running the peer scan" + (f" for {bucket} caps" if bucket else ""))
-        peers = self._scan_peers(self.profile, bucket, old.peer_count, keep=kept,
-                                 next_id=self._next_peer_number(old))
-        kept_ids = {c.id for c in kept} | {CLIENT}
-        documents = [d for d in self.documents if d.company_id in kept_ids]
-        new = [c for c in peers.candidates if c.id not in kept_ids]
-        self.progress(f"Light disclosure scan: {len(new)} new candidates")
-        documents += self._light_scan([(c.id, c.name, [c.legal_name, c.name], c.listing_label())
-                                       for c in new])
-        self.store.save("peers", peers)
-        self.store.save("documents", documents)
-        self.store.log_review("set_bucket", "peers", before=old.bucket_filter, after=bucket)
+        with self.clock.stage("research", self.setup.time_limit("research")):
+            self.progress("Re-running the peer scan" + (f" for {bucket} caps" if bucket else ""))
+            peers = self._scan_peers(self.profile, bucket, old.peer_count, keep=kept,
+                                     next_id=self._next_peer_number(old))
+            kept_ids = {c.id for c in kept} | {CLIENT}
+            self.store.save("peers", peers)
+            self.store.save("documents", [d for d in self.documents if d.company_id in kept_ids])
+            self.store.log_review("set_bucket", "peers", before=old.bucket_filter, after=bucket)
+            new = [c for c in peers.candidates if c.id not in kept_ids]
+            self.progress(f"Light disclosure scan: {len(new)} new candidates")
+            self._light_scan([(c.id, c.name, [c.legal_name, c.name], c.listing_label())
+                              for c in new])
         return peers
 
     @staticmethod
@@ -618,18 +654,45 @@ class Pipeline:
     # Stage 4 · Analysis
 
     def analyse(self) -> None:
+        """Read each company's risk section and map the results. Each company's extraction is
+        saved when it finishes, so running this again continues where it stopped."""
         self._require_status("analysing")
         companies = self.companies()
         by_id = {d.id: d for d in self.documents}
         scope_docs = self.scope["documents"]
-        self.progress("Reading risk sections of " + ", ".join(c.name for c in companies))
-        with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
-            ctx_future = pool.submit(self._context_risks, self.profile)
-            extractions = list(pool.map(
-                lambda c: self._extract(c, by_id.get(scope_docs.get(c.id) or "")), companies))
-            context_risks = ctx_future.result()
-        self.progress("Mapping risks to a common set of themes")
-        themes = self._map(context_risks, extractions, companies)
+        with self.clock.stage("analysis", self.setup.time_limit("analysis")):
+            done = {c.id: self.store.load(f"extract-{c.id}", Extraction) for c in companies
+                    if self.store.has(f"extract-{c.id}")}
+            todo = [c for c in companies if c.id not in done]
+            context_risks = (self.store.load("context_risks", list[ContextRisk])
+                             if self.store.has("context_risks") else None)
+            if todo:
+                self.progress("Reading risk sections of " + ", ".join(c.name for c in todo))
+            error: Exception | None = None
+            with ThreadPoolExecutor(max_workers=self.max_workers) as pool:
+                ctx_future = (pool.submit(self._context_risks, self.profile)
+                              if context_risks is None else None)
+                futures = {pool.submit(self._extract, c, by_id.get(scope_docs.get(c.id) or "")): c
+                           for c in todo}
+                for future in as_completed(futures):
+                    company = futures[future]
+                    try:
+                        done[company.id] = future.result()
+                    except Exception as e:  # keep what the other companies finished
+                        error = error or e
+                        continue
+                    self.store.save(f"extract-{company.id}", done[company.id])
+                if ctx_future:
+                    try:
+                        context_risks = ctx_future.result()
+                        self.store.save("context_risks", context_risks)
+                    except Exception as e:
+                        error = error or e
+            if error:
+                raise error
+            extractions = [done[c.id] for c in companies]
+            self.progress("Mapping risks to a common set of themes")
+            themes = self._map(context_risks, extractions, companies)
         self.store.save("context_risks", context_risks)
         self.store.save("extractions", extractions)
         self.store.save("themes", themes)

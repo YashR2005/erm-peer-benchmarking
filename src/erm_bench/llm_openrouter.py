@@ -26,6 +26,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 from .llm import LLMError, LLMRefusal, ResearchResult
 from .schemas import Source
 from .spend import Budget
+from .timing import Clock, TimeLimitExceeded
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -104,7 +105,8 @@ def render_annotated(content: str, annotations: list) -> ResearchResult:
 class OpenRouterLLM:
     def __init__(self, model: str, system: str, log: Callable[[dict], None] | None = None,
                  client: openai.OpenAI | None = None, base_url: str = "https://openrouter.ai/api/v1",
-                 web_search: dict | None = None, timeout: float = 600, budget: Budget | None = None):
+                 web_search: dict | None = None, timeout: float = 600, budget: Budget | None = None,
+                 clock: Clock | None = None):
         if client is None:
             key = os.environ.get("OPENROUTER_API_KEY")
             if not key:
@@ -117,6 +119,7 @@ class OpenRouterLLM:
         self.log = log or (lambda record: None)
         self.web_search = web_search or {"engine": "exa", "max_results": 5}
         self.budget = budget
+        self.clock = clock
 
     def research(self, *, stage: str, prompt_name: str, prompt: str, effort: str,
                  max_searches: int = 5, max_fetches: int = 2) -> ResearchResult:
@@ -166,19 +169,24 @@ class OpenRouterLLM:
                 **kwargs):
         if self.budget:
             self.budget.check()
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "system", "content": self.system}, *messages],
-            max_tokens=MAX_TOKENS,
-            extra_body={
-                "reasoning": {"effort": EFFORTS.get(effort, "medium")},
-                # Only route to providers that support every parameter we send
-                # (tools, response_format).
-                "provider": {"require_parameters": True},
-                **(extra or {}),
-            },
-            **kwargs,
-        )
+        limit, message = self.clock.call_limit(stage) if self.clock else (None, "")
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "system", "content": self.system}, *messages],
+                max_tokens=MAX_TOKENS,
+                extra_body={
+                    "reasoning": {"effort": EFFORTS.get(effort, "medium")},
+                    # Only route to providers that support every parameter we send
+                    # (tools, response_format).
+                    "provider": {"require_parameters": True},
+                    **(extra or {}),
+                },
+                **({"timeout": limit} if limit else {}),
+                **kwargs,
+            )
+        except openai.APITimeoutError as e:
+            raise TimeLimitExceeded(message) from e
         if self.budget and getattr(response, "usage", None):
             self.budget.record(getattr(response, "model", self.model), [response.usage.model_dump()])
         if not response.choices:

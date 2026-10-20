@@ -67,6 +67,9 @@ class Stream:
     def __exit__(self, *exc):
         return False
 
+    def __iter__(self):
+        return iter(())   # no stream events needed
+
     def get_final_message(self):
         return self.final
 

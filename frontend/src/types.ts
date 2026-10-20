@@ -133,5 +133,6 @@ export type Setup = {
              description: string }[];
   taxonomy: { key: string; name: string; description: string; examples: string[] }[];
   default_peer_count: number;
+  time_limits: { research?: number; analysis?: number; per_call?: number };
   verify: { min_score: number; min_quote_chars: number };
 };

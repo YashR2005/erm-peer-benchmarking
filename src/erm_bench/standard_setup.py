@@ -80,6 +80,10 @@ class StandardSetup:
         budget = self.method.get("research", {}).get("budgets", {}).get(kind, {})
         return {"max_searches": budget.get("searches", 5), "max_fetches": budget.get("fetches", 2)}
 
+    def time_limit(self, kind: str) -> float | None:
+        """Seconds allowed for a stage ('research', 'analysis') or one model call ('per_call')."""
+        return self.method.get("time_limits", {}).get(kind)
+
     @property
     def max_fetch_tokens(self) -> int:
         return self.method.get("research", {}).get("max_fetch_tokens", 6000)

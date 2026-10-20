@@ -42,15 +42,21 @@ const subtitles: Record<string, string> = {
   chat: 'The assistant is applying your request to the fixed steps.',
 };
 
-export function ProgressCard({ job, client }: { job: Job; client: string }) {
+const limitKind: Record<string, 'research' | 'analysis'> = {
+  research: 'research', add_peer: 'research', rescan: 'research', analysis: 'analysis',
+};
+
+export function ProgressCard({ job, client, limits }:
+  { job: Job; client: string; limits?: { research?: number; analysis?: number } }) {
   const [, setNow] = useState(0);
   useEffect(() => { const t = window.setInterval(() => setNow(n => n + 1), 1000); return () => window.clearInterval(t); }, []);
   const seconds = Math.max(0, Math.round((Date.now() - new Date(job.started_at).getTime()) / 1000));
   const elapsed = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const limit = limitKind[job.kind] ? limits?.[limitKind[job.kind]] : undefined;
   return <section className="panel progress-card" aria-live="polite">
     <div className="progress-orb"><LoaderCircle size={22} className="spin" /></div>
     <div>
-      <div className="row"><h2>{(titles[job.kind] ?? (() => 'Working'))(client)}</h2><span className="push mono subtle">{elapsed}</span></div>
+      <div className="row"><h2>{(titles[job.kind] ?? (() => 'Working'))(client)}</h2><span className="push mono subtle" title="Stops at this limit; finished steps are kept">{elapsed}{limit ? ` of ${Math.round(limit / 60)} min` : ''}</span></div>
       <p>{subtitles[job.kind] ?? ''}</p>
       <ul className="progress-log">
         {job.progress.length === 0 && <li className="now"><LoaderCircle size={15} className="spin" />Starting…</li>}
