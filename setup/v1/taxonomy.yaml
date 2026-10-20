@@ -1,0 +1,31 @@
+# Default enterprise risk taxonomy: the seven categories in the Client X
+# appendix (p.15-16). Open question Qa4: these 7 or the vision document's 8.
+categories:
+  - key: strategic
+    name: Strategic
+    description: Risks associated with high-level goals, objectives or strategies of the organisation.
+    examples: [Market trends and movements, Economic volatility, Geopolitical risk]
+  - key: financial
+    name: Financial
+    description: Risks connected with financial systems, structures and transactions undertaken by the organisation.
+    examples: [Credit risk, Liquidity risk, Fraud and corruption risk, Interest rate risk, Raw material price fluctuations]
+  - key: people
+    name: People
+    description: Risks associated with employees and stakeholders of the organisation, e.g. talent, health and safety, engagement, welfare.
+    examples: [Workplace health and safety, Staffing management, Labour violations, Talent attraction and retention]
+  - key: operational
+    name: Operational
+    description: Risks associated with the functions and activities of the organisation which are undertaken on a day-to-day basis.
+    examples: [Project management risk, Supply chain disruption, Outsourcing risk, Business interruption]
+  - key: technology
+    name: Technological
+    description: Risks associated with technological factors, including cyber incidents, privacy data management and technology innovation.
+    examples: [Cybersecurity breaches, Data breaches, IT system failures]
+  - key: legal_compliance
+    name: Legal / Compliance
+    description: Risks associated with applicable contractual, legal or regulatory frameworks in which the organisation operates.
+    examples: [Contract management, Regulatory compliance]
+  - key: sustainability
+    name: Sustainability
+    description: Risks that may have an adverse impact on the organisation's environmental, social or governance efforts, including climate risks.
+    examples: [Physical climate risk, Transition climate risk, Waste management, Carbon pricing and GHG emissions]

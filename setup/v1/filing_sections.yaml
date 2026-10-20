@@ -1,0 +1,39 @@
+# Where risk disclosures sit in the documents we read. Used by the section
+# locator: table-of-contents entries first, then page headings and keywords.
+annual_report:
+  # Headings that start a risk section (case-insensitive regex).
+  headings:
+    - '\benterprise risk management\b'
+    - '\brisk management\b'
+    - '\brisk governance\b'
+    - '\bkey risks?\b'
+    - '\bmaterial risks?\b'
+    - '\bprincipal risks?\b'
+    - '\brisk factors\b'
+    - '\bmanaging risks?\b'
+    - '\brisk (and|&) internal controls?\b'
+    - '\binternal controls? (and|&) risk management\b'
+    - '\bprinciple 9\b'          # SGX Code of Corporate Governance 2018
+  # Words that make a page more likely to be part of the risk discussion.
+  keywords:
+    - risk appetite
+    - risk register
+    - risk owner
+    - risk profile
+    - mitigat
+    - likelihood
+    - top risks
+    - emerging risk
+    - risk category
+    - risk categories
+  # Pages containing these are usually financial-statement notes, not the ERM
+  # discussion (e.g. the IFRS 7 financial risk note).
+  downweight:
+    - notes to the financial statements
+    - financial risk management objectives
+  # Ten-K / 20-F, for non-SGX peers.
+sec_filings:
+  headings:
+    - '\bitem 1a\.?\s+risk factors\b'
+    - '\bitem 3\.?d\.?\s+risk factors\b'
+    - '\bitem 1c\.?\s+cybersecurity\b'

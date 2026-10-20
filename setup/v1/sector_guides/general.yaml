@@ -1,0 +1,21 @@
+key: general
+name: General (no sector guide matched)
+match: []
+where_to_look:
+  - Stock exchange announcements and filings (e.g. sgx.com, sec.gov EDGAR)
+  - Company investor-relations pages (annual report and sustainability report PDFs)
+peer_hints:
+  - Compare business model, key markets, geography of assets and operations, and financial size.
+typical_risks:
+  - Macroeconomic and market demand risk
+  - Competition
+  - Liquidity, credit and interest rate risk
+  - Foreign exchange risk
+  - Regulatory and compliance risk
+  - Supply chain and third-party risk
+  - Business continuity and crisis events
+  - Cybersecurity and data privacy
+  - Health and safety
+  - Talent attraction and retention
+  - Fraud, bribery and corruption
+  - Climate-related physical and transition risk

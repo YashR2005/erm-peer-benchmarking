@@ -1,0 +1,89 @@
+# Standard setup v1: loaded on every run and recorded in run.json, so two
+# consultants with the same input get comparable output.
+version: v1
+name: ERM benchmark method v1 (phase 1, Product A)
+
+# Which model runs the AI stages. Override per machine with ERM_LLM_PROVIDER / ERM_LLM_MODEL
+# in .env; every run records the provider and model it used.
+llm:
+  provider: openrouter          # openrouter | anthropic
+  models:
+    openrouter: nvidia/nemotron-3.5-super-vl
+    anthropic: claude-opus-5-5
+  anthropic:
+    # The basic web tools return citations (URL + cited text) on the answer, which the pipeline
+    # needs to source each fact. The dynamic-filtering versions (..._20260209) filter results in
+    # a code sandbox and return the answer without citations (checked 20 Oct 2026).
+    web_search: web_search_20250305
+    web_fetch: web_fetch_20250910
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    # OpenRouter's server-side web search; results come back as url_citation annotations.
+    web_search:
+      engine: exa
+      max_results: 5
+
+# Effort per kind of call (low | medium | high | xhigh | max).
+effort:
+  research: medium     # web research: profile, peer scan, disclosure scan
+  structure: low       # turning research notes into JSON
+  extract: high        # reading risk sections (A2)
+  context_risks: medium  # A1
+  mapping: medium      # A4
+  command: low         # interpreting chat instructions
+
+# Web research only finds sources; our code downloads and reads the PDFs. These caps stop the
+# model reading whole annual reports during research (one 300-page PDF is ~250k tokens, and each
+# further search step re-reads it). First live run without caps: 7.4M input tokens.
+research:
+  max_fetch_tokens: 5000        # each fetched page is cut to this many tokens
+  budgets:                      # web searches and page fetches per research call
+    profile: {searches: 4, fetches: 2}
+    peers: {searches: 6, fetches: 2}
+    disclosure: {searches: 2, fetches: 1}   # client + ~6 candidates: ~14 searches in all
+    peer_lookup: {searches: 3, fetches: 1}
+
+# Spending limits while testing. A run that reaches a limit stops with a message before the
+# next model call; raise them here if a run needs more. Costs are estimates from the token
+# counts the API reports and these prices (USD).
+spending:
+  max_usd_per_run: 3.00
+  max_web_searches_per_run: 30  # a typical run uses ~24 (profile 4, peers 6, scans 2 each)
+  web_search_usd: {anthropic: 0.01, openrouter: 0.007}
+  prices_per_million_tokens:
+    claude-opus-5-5: {input: 4.00, output: 20.00}
+    claude-sonnet-5-5: {input: 2.00, output: 10.00}
+    claude-haiku-5-5: {input: 0.10, output: 0.50}
+    nvidia/nemotron-3.5-super-vl: {input: 0.10, output: 0.40}
+
+peers:
+  default_count: 3
+  candidate_multiplier: 2   # propose about twice as many candidates as requested
+  listed_only: true
+
+# Market-cap buckets for the optional peer-scan filter.
+# PROVISIONAL: three buckets were requested by Bertrand on 15 Oct; ranges to be
+# confirmed with him. Values are SGD millions.
+market_cap_buckets:
+  currency: SGD
+  status: provisional
+  buckets:
+    - key: large
+      label: Large cap
+      min: 3000
+    - key: mid
+      label: Mid cap
+      min: 500
+      max: 3000
+    - key: small
+      label: Small cap
+      max: 500
+
+verify:
+  min_score: 90        # rapidfuzz partial_ratio on normalised text
+  min_quote_chars: 15
+
+documents:
+  max_download_mb: 80
+  max_risk_pages: 40
+  first_pages: 4       # pages read for the company and year check

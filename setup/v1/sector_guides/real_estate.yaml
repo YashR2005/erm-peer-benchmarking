@@ -1,0 +1,25 @@
+key: real_estate
+name: Real estate development, investment and management
+match: [real estate, property, properties, reit, developer, development, hospitality, landlord]
+where_to_look:
+  - SGX announcements (annual reports are filed on sgx.com)
+  - Company investor-relations pages (annual report and sustainability report PDFs)
+  - REIT manager websites, if the company sponsors listed REITs (separate entities)
+peer_hints:
+  - Separate developers and investors from REIT managers and REITs; the Client X appendix excluded REIT-focused companies as peers.
+  - Compare portfolio mix (residential, commercial, industrial, hospitality, healthcare / life sciences), key markets and asset geography.
+typical_risks:
+  - Property market downturn and pricing in key markets
+  - Interest rate and refinancing risk
+  - Liquidity and capital management
+  - Foreign exchange exposure from overseas assets
+  - Development and construction project delays and cost overruns
+  - Contractor and supplier failure
+  - Tenant concentration and occupancy
+  - Government property-cooling measures and land-use regulation
+  - Geopolitical and macroeconomic risk in overseas markets (e.g. China)
+  - Workplace safety on construction sites
+  - Cybersecurity and data privacy
+  - Physical climate risk to assets and transition risk (green building requirements)
+  - Talent attraction and retention
+  - Fraud, bribery and corruption
