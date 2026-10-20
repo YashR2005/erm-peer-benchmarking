@@ -1,4 +1,4 @@
-import { ArrowRight, Ban, ChevronDown, ChevronRight, CircleCheck, CircleX, ExternalLink, FileText, Info, Link2, LoaderCircle, Minus, Plus, ShieldAlert, TriangleAlert, Upload } from 'lucide-react';
+import { ArrowRight, Ban, ChevronDown, ChevronRight, CircleCheck, CircleX, ExternalLink, FileText, Info, Link2, LoaderCircle, Minus, Plus, ShieldAlert, TriangleAlert, Undo2, Upload } from 'lucide-react';
 import { Fragment, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../../api';
@@ -217,15 +217,17 @@ function SourcesPanel({ state, busy, perform }: Props) {
       {ids.map(id => <DocGroup key={id} companyId={id} name={name(id)} primary={state.companies[id]?.primary_doc_id ?? null}
         docs={state.documents.filter(d => d.company_id === id)} busy={busy}
         onNa={doc => perform(() => api.markNa(runId, doc.id, 'Marked not available by the consultant'), 'Marked not available.')}
+        onRestore={doc => perform(() => api.restoreDocument(runId, doc.id), 'Restored.')}
         onUrl={url => perform(() => api.addDocumentUrl(runId, id, url), 'Document added.')}
         onFile={file => perform(() => api.uploadDocument(runId, id, file), 'Document uploaded.')} />)}
     </div>
   </section>;
 }
 
-function DocGroup({ companyId, name, docs, primary, busy, onNa, onUrl, onFile }: {
+function DocGroup({ companyId, name, docs, primary, busy, onNa, onRestore, onUrl, onFile }: {
   companyId: string; name: string; docs: Document[]; primary: string | null; busy: boolean;
-  onNa: (d: Document) => void; onUrl: (url: string) => Promise<boolean>; onFile: (f: File) => Promise<boolean>;
+  onNa: (d: Document) => void; onRestore: (d: Document) => void;
+  onUrl: (url: string) => Promise<boolean>; onFile: (f: File) => Promise<boolean>;
 }) {
   const [url, setUrl] = useState('');
   const [adding, setAdding] = useState(false);
@@ -246,13 +248,15 @@ function DocGroup({ companyId, name, docs, primary, busy, onNa, onUrl, onFile }:
       return <div className="doc-row" key={d.id}>
         <Icon size={17} color={`var(--${s.tone === 'gray' ? 'subtle' : s.tone})`} />
         <div style={{ minWidth: 0 }}>
-          <div className="doc-title">{d.title} {d.id === primary && <Badge tone="sky">Will be read</Badge>}</div>
+          <div className="doc-title" title={d.title}>{d.title} {d.id === primary && <Badge tone="sky">Will be read</Badge>}</div>
           <div className="doc-note">{docTypeLabel(d.doc_type)}{d.fiscal_year ? ` · FY${d.fiscal_year}` : ''}{d.page_count ? ` · ${d.page_count} pages` : ''}{d.risk_pages.length ? ` · risk pages ${d.risk_pages[0]}–${d.risk_pages[d.risk_pages.length - 1]}` : ''}{d.note ? ` · ${d.note}` : ''}</div>
         </div>
         <div className="doc-actions">
           <Badge tone={s.tone}>{s.label}</Badge>
           {d.url && <a className="icon-btn" href={d.url} target="_blank" rel="noreferrer" aria-label={`Open ${d.title}`}><ExternalLink size={14} /></a>}
-          {d.status !== 'na' && <button className="btn ghost small" disabled={busy} onClick={() => onNa(d)}>Mark n/a</button>}
+          {d.status === 'na'
+            ? <button className="btn ghost small" disabled={busy} onClick={() => onRestore(d)} title="Undo: use this document again"><Undo2 size={13} />Undo</button>
+            : <button className="btn ghost small" disabled={busy} onClick={() => onNa(d)}>Mark n/a</button>}
         </div>
       </div>;
     })}

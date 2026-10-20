@@ -138,3 +138,33 @@ def test_errors(api):
     client.post(f"/api/runs/{run_id}/peers/P2", json={"selected": False})
     assert client.post(f"/api/runs/{run_id}/lock").status_code == 400   # no peer selected
     assert client.post(f"/api/runs/{run_id}/peer-count", json={"count": 0}).status_code == 400
+
+
+def test_stop_and_resume(tmp_path, setup):
+    import time as _time
+
+    class SlowLLM(FakeLLM):
+        def research(self, **kwargs):
+            _time.sleep(0.2)
+            return super().research(**kwargs)
+
+    llm = SlowLLM()
+    client = TestClient(create_app(setup, runs_dir=tmp_path, llm_factory=lambda s, store: llm,
+                                   fetch=fake_fetch, static_dir=None))
+    run_id = start(client)
+    _time.sleep(0.05)
+    assert client.post(f"/api/runs/{run_id}/stop").status_code == 200
+    state = wait(client, run_id)
+    assert state["job"]["stopped"] and not state["job"]["error"]
+    assert state["run"]["status"] == "researching"           # shown as stopped, with Resume
+
+    client.post(f"/api/runs/{run_id}/resume")
+    state = wait(client, run_id)
+    assert state["run"]["status"] == "awaiting_scope" and not state["job"]["stopped"]
+    assert [c for k, c in llm.calls if k == "research"].count("profile") == 1   # done once
+
+    assert client.post(f"/api/runs/{run_id}/stop").status_code == 400          # nothing running
+    r = client.post(f"/api/runs/{run_id}/documents/D-P1-1/na", json={"reason": "x"})
+    assert next(d for d in r.json()["documents"] if d["id"] == "D-P1-1")["status"] == "na"
+    r = client.post(f"/api/runs/{run_id}/documents/D-P1-1/restore")
+    assert next(d for d in r.json()["documents"] if d["id"] == "D-P1-1")["status"] == "ok"

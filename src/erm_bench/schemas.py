@@ -250,7 +250,7 @@ DocType = Literal["annual_report", "sustainability_report", "corporate_governanc
 
 class DocumentLinkDraft(BaseModel):
     doc_type: DocType
-    title: str
+    title: str = Field(description="The document's title as published, without notes.")
     fiscal_year: int | None
     url: str
 
@@ -292,6 +292,8 @@ class Document(BaseModel):
     checks: DocChecks = Field(default_factory=DocChecks)
     risk_pages: list[int] = Field(default_factory=list)   # 1-indexed
     note: str = ""
+    previous_status: DocStatus | None = None   # before it was marked n/a, for Undo
+    previous_note: str = ""
 
 
 Availability = Literal["good", "partial", "none"]

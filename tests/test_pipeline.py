@@ -202,3 +202,18 @@ def test_figures_are_tidied_for_display():
     assert out["exchange"] == "SGX" and out["market_cap_as_of"] == "2026-09-30"
     assert out["headquarters"] == "Singapore"
     assert out["data_notes"] == "Assets unverified · Market cap date: 30 Sep 2026 (GuruFocus)"
+
+
+def test_mark_na_can_be_undone(run):
+    p, _ = run
+    before = next(d for d in p.documents if d.id == "D-P1-1")
+    p.mark_na("D-P1-1", "Wrong year")
+    assert p.availability("P1") == "none"
+    p.restore_document("D-P1-1")
+    after = next(d for d in p.documents if d.id == "D-P1-1")
+    assert (after.status, after.note) == (before.status, before.note)
+    assert p.availability("P1") == "good"
+    with pytest.raises(ScopeError, match="isn't marked"):
+        p.restore_document("D-P1-1")
+    actions = [r["action"] for r in p.store.read_log("reviews.jsonl")]
+    assert actions[-2:] == ["mark_na", "restore_document"]

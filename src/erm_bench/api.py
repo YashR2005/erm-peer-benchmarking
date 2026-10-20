@@ -38,6 +38,7 @@ from .schemas import BucketKey, Request
 from .spend import Budget
 from .standard_setup import REPO_ROOT, StandardSetup
 from .store import DEFAULT_RUNS_DIR, RunStore, now_iso
+from .timing import StopRequested
 
 FRONTEND_DIST = REPO_ROOT / "frontend" / "dist"
 MAX_UPLOAD_MB = 80
@@ -54,6 +55,8 @@ class Job:
     progress: list[dict] = field(default_factory=list)
     error: str | None = None
     finished_at: str | None = None
+    stop: threading.Event = field(default_factory=threading.Event)   # the Stop button
+    stopped: bool = False
 
     def add(self, message: str) -> None:
         self.progress.append({"at": now_iso(), "message": message})
@@ -64,7 +67,8 @@ class Job:
 
     def to_dict(self) -> dict:
         return {"kind": self.kind, "running": self.running, "started_at": self.started_at,
-                "finished_at": self.finished_at, "progress": self.progress, "error": self.error}
+                "finished_at": self.finished_at, "progress": self.progress, "error": self.error,
+                "stopping": self.running and self.stop.is_set(), "stopped": self.stopped}
 
 
 class Jobs:
@@ -89,6 +93,9 @@ class Jobs:
         def target() -> None:
             try:
                 work(job)
+            except StopRequested:
+                job.stopped = True
+                job.add("Stopped by you")
             except ScopeError as e:
                 job.error = str(e)
             except Exception as e:  # report every failure to the UI, not just the log
@@ -99,6 +106,14 @@ class Jobs:
 
         threading.Thread(target=target, daemon=True, name=f"{kind}:{run_id}").start()
         return job
+
+    def stop(self, run_id: str) -> bool:
+        """Ask the running job to stop at its next check. False if nothing is running."""
+        job = self._jobs.get(run_id)
+        if not (job and job.running):
+            return False
+        job.stop.set()
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -266,14 +281,14 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
     api = APIRouter(prefix="/api")
 
     def pipeline(run_id: str, progress: Callable[[str], None] | None = None,
-                 with_llm: bool = True) -> Pipeline:
+                 with_llm: bool = True, stop: threading.Event | None = None) -> Pipeline:
         try:
             if not with_llm:  # reading state needs no model client (and no API key)
                 store = RunStore.open(run_id, runs_dir=runs_dir)
                 return Pipeline(store, StandardSetup.load(store.meta["setup_version"]), llm=None,
                                 fetch=fetch)
             return Pipeline.resume(run_id, llm_factory=llm_factory, runs_dir=runs_dir,
-                                   fetch=fetch, progress=progress)
+                                   fetch=fetch, progress=progress, stop=stop)
         except FileNotFoundError as e:
             raise HTTPException(404, str(e)) from e
         except LLMError as e:
@@ -296,7 +311,8 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
         return state(run_id)
 
     def background(run_id: str, kind: str, work: Callable[[Pipeline], object]) -> dict:
-        jobs.start(run_id, kind, lambda job: work(pipeline(run_id, progress=job.add)))
+        jobs.start(run_id, kind,
+                   lambda job: work(pipeline(run_id, progress=job.add, stop=job.stop)))
         return state(run_id)
 
     def log_chat(run_id: str, role: str, text: str) -> None:
@@ -394,6 +410,13 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
             return background(run_id, "analysis", lambda q: q.analyse())
         raise HTTPException(400, f"Nothing to resume: the run is '{status}'.")
 
+    @api.post("/runs/{run_id}/stop")
+    def stop(run_id: str) -> dict:
+        """Stop the running job. It ends at its next check; what finished is saved."""
+        if not jobs.stop(run_id):
+            raise HTTPException(400, "Nothing is running.")
+        return state(run_id)
+
     @api.post("/runs/{run_id}/chat")
     def chat(run_id: str, body: ChatMessage) -> dict:
         idle(run_id)
@@ -402,9 +425,12 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
         def work(job: Job) -> None:
             session = ChatSession(setup, runs_dir=runs_dir, llm_factory=llm_factory, fetch=fetch,
                                   views=False)
-            session.pipeline = pipeline(run_id, progress=job.add)
+            session.pipeline = pipeline(run_id, progress=job.add, stop=job.stop)
             try:
                 replies = session.handle(body.message, progress=job.add)
+            except StopRequested:
+                log_chat(run_id, "assistant", "Stopped. What finished is saved.")
+                raise
             except Exception as e:
                 log_chat(run_id, "assistant", f"Something failed: {type(e).__name__}: {e}")
                 raise
@@ -452,6 +478,11 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
     @api.post("/runs/{run_id}/documents/{doc_id}/na")
     def mark_na(run_id: str, doc_id: str, body: Reason) -> dict:
         return act(run_id, lambda p: p.mark_na(doc_id, body.reason))
+
+    @api.post("/runs/{run_id}/documents/{doc_id}/restore")
+    def restore_document(run_id: str, doc_id: str) -> dict:
+        """Undo "Mark n/a"."""
+        return act(run_id, lambda p: p.restore_document(doc_id))
 
     @api.post("/runs/{run_id}/lock")
     def lock(run_id: str) -> dict:

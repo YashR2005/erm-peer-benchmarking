@@ -13,6 +13,7 @@ UI-agnostic: the chat app and the CLI both drive this class.
 from __future__ import annotations
 
 import re
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -57,7 +58,7 @@ from .schemas import (
 from .spend import Budget, BudgetExceeded
 from .standard_setup import StandardSetup
 from .store import DEFAULT_RUNS_DIR, RunStore, now_iso
-from .timing import Clock, TimeLimitExceeded
+from .timing import Clock, StopRequested, TimeLimitExceeded
 from .verify import normalize_pages, verify_quote
 
 Progress = Callable[[str], None]
@@ -135,7 +136,7 @@ class Findings:
 class Pipeline:
     def __init__(self, store: RunStore, setup: StandardSetup, llm: LLM,
                  fetch: docs.Fetcher | None = None, progress: Progress | None = None,
-                 max_workers: int = 4):
+                 max_workers: int = 4, stop: threading.Event | None = None):
         self.store = store
         self.setup = setup
         self.llm = llm
@@ -144,7 +145,8 @@ class Pipeline:
         self.progress = progress or (lambda message: None)
         self.max_workers = max_workers
         # One clock for this pipeline's stages, shared with the model backend's calls.
-        self.clock = Clock(per_call=setup.time_limit("per_call"))
+        # `stop` is the Stop button: set it and the run stops at the next check.
+        self.clock = Clock(per_call=setup.time_limit("per_call"), stop=stop)
         if hasattr(llm, "clock"):
             llm.clock = self.clock
 
@@ -226,6 +228,7 @@ class Pipeline:
                 profile = self.profile
                 self.progress("Using the client profile from the earlier attempt")
             else:
+                self.clock.check()
                 self.progress(f"Profiling {req.client_name} from live sources")
                 profile = self._profile(req)
                 self.store.save("profile", profile)
@@ -234,6 +237,7 @@ class Pipeline:
                 peers = self.peers
                 self.progress("Using the peer candidates from the earlier attempt")
             else:
+                self.clock.check()
                 self.progress("Scanning for listed peers")
                 peers = self._scan_peers(profile, req.market_cap_bucket, req.peer_count)
                 self.store.save("peers", peers)
@@ -396,6 +400,7 @@ class Pipeline:
     def _scan_company(self, company_id: str, name: str, names: list[str],
                       listing: str) -> list[Document]:
         s = self.setup
+        self.clock.check()
         try:
             notes = self.llm.research(
                 stage=f"disclosure:{company_id}", prompt_name=s.prompt_version("disclosure_research"),
@@ -408,8 +413,8 @@ class Pipeline:
                 prompt=s.prompt("disclosure_structure", company_name=name, notes=notes.text,
                                 citations=notes.citations_block()),
                 schema=DisclosureDraft, effort=s.effort("structure"))
-        except (BudgetExceeded, TimeLimitExceeded):
-            raise  # spending and time limits stop the whole stage
+        except (BudgetExceeded, TimeLimitExceeded, StopRequested):
+            raise  # spending and time limits, and Stop, end the whole stage
         except Exception as e:  # one company's failure must not stop the scan
             return [Document(id=f"D-{company_id}-1", company_id=company_id,
                              doc_type="annual_report", title="(disclosure scan failed)",
@@ -633,8 +638,31 @@ class Pipeline:
         doc = next((d for d in documents if d.id == doc_id), None)
         if doc is None:
             raise ScopeError(f"Unknown document {doc_id}")
+        if doc.status == "na":
+            return
         self.store.log_review("mark_na", doc_id, before=doc.status, after="na", reason=reason)
+        doc.previous_status, doc.previous_note = doc.status, doc.note
         doc.status, doc.note = "na", reason
+        self.store.save("documents", documents)
+
+    def restore_document(self, doc_id: str) -> None:
+        """Undo "Mark n/a"."""
+        self._require_status("awaiting_scope")
+        documents = self.documents
+        doc = next((d for d in documents if d.id == doc_id), None)
+        if doc is None:
+            raise ScopeError(f"Unknown document {doc_id}")
+        if doc.status != "na":
+            raise ScopeError(f"{doc_id} isn't marked not available.")
+        if doc.previous_status:
+            status = doc.previous_status
+        elif doc.sha256:  # marked before statuses were remembered: work it out from the checks
+            status = "ok" if doc.checks.company_match else "check_failed"
+        else:
+            status = "found"
+        self.store.log_review("restore_document", doc_id, before="na", after=status)
+        doc.status, doc.note = status, doc.previous_note
+        doc.previous_status, doc.previous_note = None, ""
         self.store.save("documents", documents)
 
     def lock_scope(self) -> dict:
@@ -692,6 +720,7 @@ class Pipeline:
             if error:
                 raise error
             extractions = [done[c.id] for c in companies]
+            self.clock.check()
             self.progress("Mapping risks to a common set of themes")
             themes = self._map(context_risks, extractions, companies)
         self.store.save("context_risks", context_risks)
@@ -702,6 +731,7 @@ class Pipeline:
         self._set("awaiting_findings")
 
     def _context_risks(self, profile: Profile) -> list[ContextRisk]:
+        self.clock.check()
         s = self.setup
         guide = next(g for g in s.sector_guides if g.key == profile.sector_guide)
         facts = "\n".join(f"{f.id}: {f.text}" + ("" if f.sourced else " (unsourced)")
@@ -728,6 +758,7 @@ class Pipeline:
         return risks
 
     def _extract(self, company: Company, doc: Document | None) -> Extraction:
+        self.clock.check()
         if doc is None or not doc.sha256:
             return Extraction(company_id=company.id, doc_id=None, has_risk_disclosure=False,
                               note="No usable document: insufficient evidence.")

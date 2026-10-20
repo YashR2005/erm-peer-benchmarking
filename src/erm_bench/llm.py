@@ -213,9 +213,11 @@ class ClaudeLLM:
             **fallback,
             **params,
         ) as stream:
-            for _event in stream:
+            for _event in stream:  # leaving the block closes the connection and the call
                 if limit and time.monotonic() - started > limit:
-                    raise TimeLimitExceeded(message)  # leaving the block closes the connection
+                    raise TimeLimitExceeded(message)
+                if self.clock:
+                    self.clock.check()  # Stop pressed
             return stream.get_final_message()
 
     @staticmethod

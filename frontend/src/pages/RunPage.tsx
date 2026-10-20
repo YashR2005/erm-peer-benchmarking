@@ -1,4 +1,4 @@
-import { ArrowLeft, Download, FileSpreadsheet, LoaderCircle, MessageSquareText, RotateCcw, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, CirclePause, Download, FileSpreadsheet, LoaderCircle, MessageSquareText, Play, RotateCcw, Square, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { Badge } from '../components/Badge';
@@ -63,6 +63,7 @@ export function RunPage({ runId, setup, navigate, onChanged }:
           timer = window.setTimeout(tick, 1200);
         } else if (wasRunning.current && job) {
           if (job.error) toast.error(job.error);
+          else if (job.stopped) toast.info('Stopped. What finished is saved.');
           else toast.success(finishedMessage[job.kind] ?? 'Done.');
           wasRunning.current = null;
           onChanged();
@@ -126,7 +127,7 @@ export function RunPage({ runId, setup, navigate, onChanged }:
         <div className="eyebrow">Risk profile benchmark</div>
         <h1>{name}</h1>
         <div className="run-meta">
-          <Badge tone={running ? 'blue' : status.tone} dot>{running ? 'Working' : status.label}</Badge>
+          <Badge tone={running ? 'blue' : interrupted ? 'amber' : status.tone} dot>{running ? 'Working' : interrupted ? 'Stopped' : status.label}</Badge>
           {profile && <span>{listing(profile)}</span>}
           {profile?.market_cap_sgd_millions != null && <span>{money(profile.market_cap_sgd_millions)} market cap</span>}
           <span>{state.request.reporting_year ? `FY${state.request.reporting_year}` : 'Latest annual report'}</span>
@@ -136,6 +137,12 @@ export function RunPage({ runId, setup, navigate, onChanged }:
         </div>
       </div>
       <div className="heading-actions">
+        {running
+          ? <button className="btn danger" disabled={job?.stopping} onClick={() => perform(() => api.stop(run.run_id))}>
+              {job?.stopping ? <LoaderCircle size={15} className="spin" /> : <Square size={13} fill="currentColor" />}
+              {job?.stopping ? 'Stopping…' : 'Stop'}</button>
+          : interrupted && <button className="btn primary" disabled={pending} onClick={() => perform(() => api.resume(run.run_id))}>
+              <Play size={15} fill="currentColor" />Resume</button>}
         <button className="btn" onClick={() => setAssistantOpen(open => !open)} aria-pressed={assistantOpen}>
           <MessageSquareText size={16} />{assistantOpen ? 'Hide assistant' : 'Assistant'}
         </button>
@@ -148,14 +155,17 @@ export function RunPage({ runId, setup, navigate, onChanged }:
 
     <div className={`workspace ${assistantOpen ? '' : 'no-assistant'}`}>
       <div className="stack" style={{ minWidth: 0 }}>
-        {running && job && <ProgressCard job={job} client={state.request.client_name} limits={setup?.time_limits} />}
+        {running && job && <ProgressCard job={job} client={state.request.client_name} limits={setup?.time_limits}
+          onStop={() => perform(() => api.stop(run.run_id))} />}
         {!running && job?.error && <div className="note red" role="alert"><TriangleAlert size={16} />
           <div className="grow"><strong>The last step failed.</strong> {job.error}</div>
           {interrupted && <button className="btn small" onClick={() => perform(() => api.resume(run.run_id))}><RotateCcw size={14} />Try again</button>}
         </div>}
-        {interrupted && !job?.error && <div className="note amber"><TriangleAlert size={16} />
-          <div className="grow">This benchmark stopped while {run.status === 'analysing' ? 'analysing' : 'researching'} (the server was restarted).</div>
-          <button className="btn small" onClick={() => perform(() => api.resume(run.run_id))}><RotateCcw size={14} />Resume</button>
+        {interrupted && !job?.error && <div className="note amber"><CirclePause size={16} />
+          <div className="grow">{job?.stopped
+            ? <>You stopped this benchmark while {run.status === 'analysing' ? 'analysing' : 'researching'}. Everything that finished is saved.</>
+            : <>This benchmark stopped while {run.status === 'analysing' ? 'analysing' : 'researching'} (the server was restarted). Everything that finished is saved.</>}</div>
+          <button className="btn small" onClick={() => perform(() => api.resume(run.run_id))}><Play size={13} fill="currentColor" />Resume</button>
         </div>}
         {run.status === 'awaiting_scope' && state.peers && <ScopeView {...actions} setup={setup} />}
         {(run.status === 'awaiting_findings' || run.status === 'exported') && state.findings &&

@@ -51,6 +51,7 @@ export type Document = {
 export type Job = {
   kind: string; running: boolean; started_at: string; finished_at: string | null;
   progress: { at: string; message: string }[]; error: string | null;
+  stopping?: boolean; stopped?: boolean;
 };
 
 export type Theme = {

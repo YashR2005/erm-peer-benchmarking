@@ -33,6 +33,7 @@ export const api = {
   startByChat: (message: string) =>
     post<{ run_id: string | null; reply: string | null }>('/api/chat', { message }),
   resume: (id: string) => post<RunState>(`/api/runs/${id}/resume`),
+  stop: (id: string) => post<RunState>(`/api/runs/${id}/stop`),
   chat: (id: string, message: string) => post<RunState>(`/api/runs/${id}/chat`, { message }),
 
   selectPeer: (id: string, peerId: string, selected: boolean) =>
@@ -52,6 +53,8 @@ export const api = {
   },
   markNa: (id: string, docId: string, reason: string) =>
     post<RunState>(`/api/runs/${id}/documents/${docId}/na`, { reason }),
+  restoreDocument: (id: string, docId: string) =>
+    post<RunState>(`/api/runs/${id}/documents/${docId}/restore`),
   lock: (id: string) => post<RunState>(`/api/runs/${id}/lock`),
 
   changeTheme: (id: string, key: string, change: { removed?: boolean; name?: string; category?: string }) =>

@@ -94,3 +94,30 @@ test('the method page and a phone-sized overview', async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBe(0);
 });
+
+test('a running benchmark can be stopped and resumed', async ({ page }) => {
+  await page.goto('/#/new');
+  await page.getByPlaceholder('e.g. City Developments').fill('City Developments');
+  await page.getByRole('button', { name: 'Start benchmark' }).click();
+  await expect(page.locator('.progress-card')).toBeVisible();
+  await page.screenshot({ path: 'test-results/running.png' });
+  await page.getByRole('button', { name: 'Stop', exact: true }).first().click();
+  await expect(page.getByText(/You stopped this benchmark while researching/)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText('Stopped. What finished is saved.')).toBeVisible();
+  await expect(page.locator('.run-meta')).toContainText('Stopped');
+  await page.waitForTimeout(1000);
+  await page.screenshot({ path: 'test-results/stopped.png' });
+
+  await page.getByRole('button', { name: 'Resume' }).first().click();
+  await expect(page.getByRole('heading', { name: 'Peer candidates' })).toBeVisible({ timeout: 30_000 });
+});
+
+test('marking a document not available can be undone', async ({ page }) => {
+  await startBenchmark(page);
+  const client = page.locator('.doc-group', { has: page.getByRole('heading', { name: /CDL/ }) });
+  await client.getByRole('button', { name: 'Mark n/a' }).first().click();
+  await expect(client.getByText('Not available', { exact: true })).toBeVisible();
+  await client.getByRole('button', { name: 'Undo' }).click();
+  await expect(client.getByText('Checked', { exact: true })).toBeVisible();
+  await expect(client.getByRole('button', { name: 'Undo' })).toHaveCount(0);
+});

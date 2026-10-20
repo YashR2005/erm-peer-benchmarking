@@ -14,7 +14,10 @@ export function RunsTable({ runs, navigate, emptyText }:
     <thead><tr><th>Client</th><th>Status</th><th>Peers</th><th>Year</th><th>Cost</th><th>Updated</th><th /></tr></thead>
     <tbody>
       {runs.map(run => {
-        const status = statusInfo[run.status] ?? { label: run.status, tone: 'gray' };
+        // A run in a working state with no job running was stopped (or the server restarted).
+        const stopped = !run.busy && ['created', 'researching', 'analysing'].includes(run.status);
+        const status = stopped ? { label: 'Stopped', tone: 'amber' }
+          : statusInfo[run.status] ?? { label: run.status, tone: 'gray' };
         return <tr key={run.run_id} onClick={() => navigate({ page: 'run', id: run.run_id })}>
           <td><div className="client-cell">
             <span className="client-avatar">{initials(run.client)}</span>

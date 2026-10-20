@@ -111,3 +111,26 @@ def test_analysis_continues_where_a_time_limit_stopped_it(tmp_path, setup):
     assert structured.count("extract:client") == 1 and structured.count("extract:P1") == 1
     assert structured.count("context_risks") == 1 and structured.count("mapping") == 1
     assert len(p.findings().rows) > 0
+
+
+def test_stop_cuts_off_a_call_and_the_stage():
+    import threading
+
+    from erm_bench.timing import StopRequested
+
+    stop = threading.Event()
+    clock = Clock(per_call=240, stop=stop)
+    clock.check()
+    stop.set()
+    with pytest.raises(StopRequested):
+        clock.check()
+
+    stop.clear()
+    client = NS(beta=NS(messages=NS(stream=lambda **kw: SlowStream())))
+    client.with_options = lambda timeout: client
+    llm = ClaudeLLM("claude-sonnet-5-5", "system", client=client, clock=clock)
+    threading.Timer(0.05, stop.set).start()          # Stop pressed while the answer streams
+    started = time.monotonic()
+    with pytest.raises(StopRequested):
+        llm.structured(stage="extract:P1", prompt_name="x", prompt="p", schema=NS, effort="high")
+    assert time.monotonic() - started < 0.15         # cut off within an event or two
