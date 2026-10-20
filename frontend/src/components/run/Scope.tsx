@@ -1,8 +1,8 @@
-import { ArrowRight, Ban, ChevronDown, ChevronRight, CircleCheck, CircleX, ExternalLink, FileText, Link2, LoaderCircle, Minus, Plus, ShieldAlert, TriangleAlert, Upload } from 'lucide-react';
+import { ArrowRight, Ban, ChevronDown, ChevronRight, CircleCheck, CircleX, ExternalLink, FileText, Info, Link2, LoaderCircle, Minus, Plus, ShieldAlert, TriangleAlert, Upload } from 'lucide-react';
 import { Fragment, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../../api';
-import { availabilityInfo, bucketLabel, docStatusInfo, docTypeLabel, domain, initials, money, plural } from '../../lib/format';
+import { asOfLabel, availabilityInfo, bucketLabel, docStatusInfo, docTypeLabel, domain, initials, listing, money, plural, shortPlace } from '../../lib/format';
 import type { RunActions } from '../../pages/RunPage';
 import type { Availability, BucketKey, Document, PeerCandidate, Setup } from '../../types';
 import { Badge } from '../Badge';
@@ -56,23 +56,19 @@ function ClientCard({ state }: Props) {
         <div>
           <h2>{p.legal_name}</h2>
           <div className="row wrap" style={{ marginTop: 6, gap: 6 }}>
-            <Badge tone={p.listed ? 'navy' : 'amber'}>{p.listed ? `${p.exchange}: ${p.ticker}` : 'Unlisted'}</Badge>
+            <Badge tone={p.listed ? 'navy' : 'amber'}>{listing(p)}</Badge>
             <Badge tone="sky">{bucketLabel(p.bucket)}</Badge>
-            <Badge tone="outline">{money(p.market_cap_sgd_millions)}{p.market_cap_as_of ? ` · ${p.market_cap_as_of}` : ''}</Badge>
-            {p.headquarters && <Badge tone="outline">{p.headquarters}</Badge>}
+            <Badge tone="outline" title={p.market_cap_as_of ? `Market cap as of ${p.market_cap_as_of}` : undefined}>
+              {money(p.market_cap_sgd_millions)}{asOfLabel(p.market_cap_as_of) ? ` · ${asOfLabel(p.market_cap_as_of)}` : ''}</Badge>
+            {shortPlace(p.headquarters) && <Badge tone="outline" title={p.headquarters ?? undefined}>{shortPlace(p.headquarters)}</Badge>}
+            <Badge tone="gray" title="Sector guide used for search hints and typical risks">{p.sector_guide.replace('_', ' ')} guide</Badge>
           </div>
         </div>
       </div>
-      <Badge tone="gray" title="Sector guide used for search and typical risks">{p.sector_guide.replace('_', ' ')} guide</Badge>
     </div>
     <div className="panel-body">
       <p className="profile-desc" style={{ marginTop: 0 }}>{p.business_description}</p>
-      <div className="kv-grid">
-        <div className="kv"><span>Total assets</span><strong>{p.total_assets ?? '—'}</strong></div>
-        <div className="kv"><span>Revenue</span><strong>{p.revenue ?? '—'}</strong></div>
-        <div className="kv"><span>EBITDA</span><strong>{p.ebitda ?? '—'}</strong></div>
-        <div className="kv"><span>Employees</span><strong>{p.employees ?? '—'}</strong></div>
-      </div>
+      <Figures item={p} />
       {p.segments.length > 0 && <><div className="label-sm">Segments</div><div className="chip-row">{p.segments.map(s => <span key={s} className="chip">{s}</span>)}</div></>}
       {p.countries.length > 0 && <><div className="label-sm">Countries</div><div className="chip-row">{p.countries.map(s => <span key={s} className="chip sky">{s}</span>)}</div></>}
       {p.warnings.length > 0 && <div className="stack" style={{ gap: 8, marginTop: 14 }}>
@@ -160,7 +156,7 @@ function PeersPanel({ state, busy, perform, setup }: Props) {
               <tr className={`peer-row ${c.selected ? '' : 'off'}`}>
                 <td><button className={`toggle ${c.selected ? 'on' : ''}`} role="switch" aria-checked={c.selected}
                   aria-label={`Use ${c.name}`} disabled={busy} onClick={() => perform(() => api.selectPeer(runId, c.id, !c.selected))} /></td>
-                <td><div className="peer-name"><strong>{c.name} <span className="mono subtle">{c.id}</span></strong><small>{c.listed ? `${c.exchange}: ${c.ticker}` : 'Unlisted'}{c.headquarters ? ` · ${c.headquarters}` : ''}</small></div></td>
+                <td><div className="peer-name"><strong>{c.name} <span className="mono subtle">{c.id}</span></strong><small>{listing(c)}{shortPlace(c.headquarters) ? ` · ${shortPlace(c.headquarters)}` : ''}</small></div></td>
                 <td><div style={{ fontWeight: 650, color: 'var(--ink)' }}>{money(c.market_cap_sgd_millions)}</div><Badge tone={peers.bucket_filter && c.bucket !== peers.bucket_filter ? 'amber' : 'sky'}>{bucketLabel(c.bucket)}</Badge></td>
                 <td>{doc ? <><Badge tone={docStatusInfo[doc.status].tone} dot>{doc.fiscal_year ? `FY${doc.fiscal_year}` : docStatusInfo[doc.status].label}</Badge>
                   <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{doc.checks.has_risk_section ? 'Risk section found' : 'No risk section found'}</div></>
@@ -180,6 +176,20 @@ function PeersPanel({ state, busy, perform, setup }: Props) {
   </section>;
 }
 
+// Figures in tiles: two lines at most, the full text on hover, caveats underneath.
+function Figures({ item }: { item: { total_assets: string | null; revenue: string | null; ebitda: string | null;
+                                     employees: string | null; data_notes?: string | null } }) {
+  const tiles: [string, string | null][] = [['Total assets', item.total_assets], ['Revenue', item.revenue],
+                                            ['EBITDA', item.ebitda], ['Employees', item.employees]];
+  return <>
+    <div className="kv-grid">
+      {tiles.map(([label, value]) => <div className="kv" key={label}><span>{label}</span>
+        <strong title={value ?? undefined}>{value ?? '—'}</strong></div>)}
+    </div>
+    {item.data_notes && <p className="data-note"><Info size={13} /><span>{item.data_notes}</span></p>}
+  </>;
+}
+
 function PeerDetails({ c }: { c: PeerCandidate }) {
   return <div className="peer-details">
     <div>
@@ -189,12 +199,7 @@ function PeerDetails({ c }: { c: PeerCandidate }) {
     </div>
     <div>
       <h4>Profile</h4>
-      <div className="kv-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <div className="kv"><span>Total assets</span><strong>{c.total_assets ?? '—'}</strong></div>
-        <div className="kv"><span>Revenue</span><strong>{c.revenue ?? '—'}</strong></div>
-        <div className="kv"><span>EBITDA</span><strong>{c.ebitda ?? '—'}</strong></div>
-        <div className="kv"><span>Employees</span><strong>{c.employees ?? '—'}</strong></div>
-      </div>
+      <Figures item={c} />
       <h4>Legal name</h4><p>{c.legal_name}</p>
       <h4>Segments · markets</h4><p>{c.segments.join(', ') || '—'} · {c.main_markets.join(', ') || '—'} · {c.operating_countries ?? '?'} countries</p>
       {c.sources.length > 0 && <><h4>Sources</h4><SourceList sources={c.sources} /></>}

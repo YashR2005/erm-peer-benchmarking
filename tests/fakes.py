@@ -89,7 +89,7 @@ def _candidate(name, legal, cap, recommended):
         market_cap_sgd_millions=cap, market_cap_as_of="2026-10-01", headquarters="Singapore",
         segments=["Property development"], operating_countries="1-5", main_markets=["Singapore"],
         total_assets="S$5B (FY2025)", revenue="S$1B (FY2025)", ebitda=None, employees="1,000",
-        related_entity_warning=None, rationale=f"{name} develops property in Singapore.",
+        data_notes=None, related_entity_warning=None, rationale=f"{name} develops property in Singapore.",
         key_limitation="Smaller overseas portfolio.", recommended=recommended,
         citation_ids=["c1"])
 
@@ -225,7 +225,7 @@ class FakeLLM:
                 segments=["Property development", "Hotel operations"],
                 countries=["Singapore", "China", "UK"], main_markets=["Singapore"],
                 total_assets="S$25B", revenue="S$3.1B", ebitda=None, employees="7,000",
-                parent=None, related_listed_entities=["CDL Hospitality Trusts"],
+                parent=None, data_notes=None, related_listed_entities=["CDL Hospitality Trusts"],
                 latest_annual_report_year=2025,
                 facts=[DraftFact(field="listing", text="Listed on SGX (C09).", citation_ids=["c1"]),
                        DraftFact(field="geography", text="Assets in China and the UK.",

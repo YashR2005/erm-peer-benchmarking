@@ -159,10 +159,15 @@ class ClaudeLLM:
                 tools.append({"type": self.web_fetch_tool, "name": "web_fetch",
                               "max_uses": max_fetches, "max_content_tokens": self.max_fetch_tokens})
             messages = [user] if not blocks else [user, {"role": "assistant", "content": blocks}]
-            final = self._stream(stage, messages=messages, tools=tools, output_config={"effort": effort})
-            usage.append(final.usage.to_dict())
-            if self.budget:
-                self.budget.record(final.model, usage[-1:])
+            try:
+                final = self._stream(stage, messages=messages, tools=tools,
+                                     output_config={"effort": effort})
+                usage.append(final.usage.to_dict())
+                if self.budget:
+                    self.budget.record(final.model, usage[-1:])
+            finally:
+                if self.budget:
+                    self.budget.release(searches)
             self._check_stop(final, stage)
             blocks = blocks + list(final.content)
             if final.stop_reason != "pause_turn":

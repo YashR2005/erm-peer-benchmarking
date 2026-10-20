@@ -16,7 +16,7 @@ export type Profile = {
   business_description: string; segments: string[]; countries: string[]; main_markets: string[];
   total_assets: string | null; revenue: string | null; ebitda: string | null;
   employees: string | null; parent: string | null; related_listed_entities: string[];
-  latest_annual_report_year: number | null; facts: Fact[]; warnings: string[];
+  latest_annual_report_year: number | null; data_notes?: string | null; facts: Fact[]; warnings: string[];
 };
 
 export type PeerCandidate = {
@@ -25,7 +25,7 @@ export type PeerCandidate = {
   bucket: BucketKey | null; headquarters: string | null; segments: string[];
   operating_countries: string | null; main_markets: string[]; total_assets: string | null;
   revenue: string | null; ebitda: string | null; employees: string | null;
-  related_entity_warning: string | null; rationale: string; key_limitation: string;
+  related_entity_warning: string | null; data_notes?: string | null; rationale: string; key_limitation: string;
   recommended: boolean; selected: boolean; added_by: 'ai' | 'consultant'; sources: Source[];
   warnings: string[];
 };

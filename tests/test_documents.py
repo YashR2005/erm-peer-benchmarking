@@ -78,3 +78,12 @@ def test_financial_statement_note_is_not_a_risk_section(setup):
              "Credit risk mitigation and risk owner"]
     found = docs.locate_risk_sections(pages, [], setup.filing_sections["annual_report"])
     assert not found.has_section
+
+
+def test_every_prompt_renders(setup):
+    """A literal '$' in a prompt (e.g. 'S$3B') breaks string.Template; it must be written '$$'."""
+    import re
+
+    for path in sorted((setup.root / "prompts").glob("*.md")):
+        names = set(re.findall(r"\$([a-z_]+)", path.read_text()))
+        assert setup.prompt(path.stem, **{n: "x" for n in names})

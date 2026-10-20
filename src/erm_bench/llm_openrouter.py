@@ -128,8 +128,12 @@ class OpenRouterLLM:
         tool = {"type": "openrouter:web_search",
                 "parameters": {**self.web_search, "max_uses": max_searches}}
         started = time.monotonic()
-        response = self._create(stage, [{"role": "user", "content": prompt}], effort,
-                                extra={"tools": [tool]})
+        try:
+            response = self._create(stage, [{"role": "user", "content": prompt}], effort,
+                                    extra={"tools": [tool]})
+        finally:
+            if self.budget:
+                self.budget.release(max_searches)
         message = response.choices[0].message
         result = render_annotated(message.content or "", message.annotations or [])
         self._log(stage, prompt_name, prompt, effort, response, started,

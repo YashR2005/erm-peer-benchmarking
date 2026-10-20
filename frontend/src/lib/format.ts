@@ -5,6 +5,27 @@ export function money(millions: number | null | undefined): string {
   return millions >= 1000 ? `S$${(millions / 1000).toFixed(1)}B` : `S$${Math.round(millions)}M`;
 }
 
+// Runs saved before the field formats were tightened can hold long values; show the short form.
+export function shortExchange(exchange: string | null | undefined): string {
+  if (!exchange) return '?';
+  return exchange.match(/\(([A-Z]{2,6})\)/)?.[1] ?? exchange.trim();
+}
+
+export function listing(item: { listed: boolean; exchange: string | null; ticker: string | null }): string {
+  return item.listed ? `${shortExchange(item.exchange)}: ${item.ticker ?? '?'}` : 'Unlisted';
+}
+
+export function shortPlace(place: string | null | undefined): string | null {
+  return place ? place.split('(')[0].replace(/[,;\s]+$/, '') || null : null;
+}
+
+/** '2026-10-01 (StockAnalysis)' -> '1 Oct 2026'; null if there is no date in the text. */
+export function asOfLabel(text: string | null | undefined): string | null {
+  const iso = text?.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+  if (iso) return new Date(iso).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
+  return text?.match(/\b\d{1,2} [A-Z][a-z]{2,8} \d{4}\b/)?.[0] ?? null;
+}
+
 export function initials(name: string): string {
   const words = name.replace(/\(.*?\)/g, '').split(/\s+/).filter(w => /^[A-Za-z]/.test(w));
   return (words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? '?').slice(0, 2)).toUpperCase();

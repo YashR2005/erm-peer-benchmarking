@@ -8,7 +8,7 @@ import { ProgressCard, Stepper } from '../components/run/Progress';
 import { ScopeView } from '../components/run/Scope';
 import { modelLabel } from '../components/Sidebar';
 import { useToast } from '../components/Toast';
-import { initials, money, statusInfo } from '../lib/format';
+import { initials, listing, money, statusInfo } from '../lib/format';
 import type { Route } from '../lib/useHashRoute';
 import type { RunState, Setup } from '../types';
 
@@ -127,7 +127,7 @@ export function RunPage({ runId, setup, navigate, onChanged }:
         <h1>{name}</h1>
         <div className="run-meta">
           <Badge tone={running ? 'blue' : status.tone} dot>{running ? 'Working' : status.label}</Badge>
-          {profile && <span>{profile.listed ? `${profile.exchange}: ${profile.ticker}` : 'Unlisted'}</span>}
+          {profile && <span>{listing(profile)}</span>}
           {profile?.market_cap_sgd_millions != null && <span>{money(profile.market_cap_sgd_millions)} market cap</span>}
           <span>{state.request.reporting_year ? `FY${state.request.reporting_year}` : 'Latest annual report'}</span>
           <span title={run.model}>{modelLabel(run.model)}</span>

@@ -115,3 +115,15 @@ def test_cap_reached_during_the_light_scan_stops_the_run(tmp_path, setup):
     with pytest.raises(BudgetExceeded):
         p.research()
     assert p.store.status == "researching"                    # can be resumed after raising the cap
+
+
+def test_parallel_calls_cannot_overshoot_the_search_cap(claude_setup):
+    budget = Budget(claude_setup)                              # 30 searches per run
+    grants = [budget.allow_searches(12), budget.allow_searches(12), budget.allow_searches(12)]
+    assert grants == [12, 12, 6]                               # reserved before any finished
+    with pytest.raises(BudgetExceeded):
+        budget.allow_searches(1)
+    budget.record("claude-sonnet-5-5", [{"input_tokens": 0, "output_tokens": 0,
+                                         "server_tool_use": {"web_search_requests": 4}}])
+    budget.release(12)                                         # that call used 4 of its 12
+    assert budget.allow_searches(20) == 8                      # 30 - 4 used - 18 still reserved

@@ -1,5 +1,5 @@
 import { ArrowRight, FolderOpen, LoaderCircle } from 'lucide-react';
-import { ago, initials, statusInfo } from '../lib/format';
+import { ago, initials, shortExchange, statusInfo } from '../lib/format';
 import type { Route } from '../lib/useHashRoute';
 import type { RunSummary } from '../types';
 import { Badge } from './Badge';
@@ -18,7 +18,7 @@ export function RunsTable({ runs, navigate, emptyText }:
         return <tr key={run.run_id} onClick={() => navigate({ page: 'run', id: run.run_id })}>
           <td><div className="client-cell">
             <span className="client-avatar">{initials(run.client)}</span>
-            <div><strong>{run.legal_name ?? run.client}</strong><small>{run.listing ?? 'Listing not checked yet'}</small></div>
+            <div><strong>{run.legal_name ?? run.client}</strong><small>{run.listing ? run.listing.replace(/^[^:]+/, x => shortExchange(x)) : 'Listing not checked yet'}</small></div>
           </div></td>
           <td>{run.busy
             ? <Badge tone="blue"><LoaderCircle size={12} className="spin" />Working</Badge>

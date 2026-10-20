@@ -29,6 +29,16 @@ class Source(BaseModel):
 
 BucketKey = Literal["large", "mid", "small"]
 
+# Formats for figures shown in small tiles. Caveats go in data_notes, not in the figure.
+EXCHANGE = Field(description="Exchange code only, e.g. SGX, HKEX, NYSE. Null if unlisted.")
+AS_OF = Field(description="Date of the market cap figure, YYYY-MM-DD only. Null if unknown.")
+PLACE = Field(description="City and country only, e.g. 'Singapore' or 'Hong Kong, China'.")
+FIGURE = Field(description="Short figure with currency and period, at most 25 characters, e.g. "
+                           "'S$27.0B (FY2025)' or 'HK$19.7B (FY2025)'. Caveats go in data_notes.")
+PEOPLE = Field(description="Head count with year, e.g. '9,546 (2025)'. Caveats go in data_notes.")
+NOTES = Field(description="Caveats about the figures: sources disagree, unverified, different "
+                          "bases (e.g. statutory vs headline), currency conversions. Null if none.")
+
 
 # ---------------------------------------------------------------------------
 # 1 · Request
@@ -85,21 +95,23 @@ class ProfileDraft(BaseModel):
     legal_name: str
     short_name: str
     listed: bool
-    exchange: str | None
+    exchange: str | None = EXCHANGE
     ticker: str | None
     market_cap_sgd_millions: float | None
-    market_cap_as_of: str | None
-    headquarters: str | None
+    market_cap_as_of: str | None = AS_OF
+    headquarters: str | None = PLACE
     sector: str
-    business_description: str
+    business_description: str = Field(description="Two sentences at most.")
     segments: list[str]
     countries: list[str]
     main_markets: list[str]
-    total_assets: str | None
-    revenue: str | None
-    ebitda: str | None
-    employees: str | None
-    parent: str | None
+    total_assets: str | None = FIGURE
+    revenue: str | None = FIGURE
+    ebitda: str | None = FIGURE
+    employees: str | None = PEOPLE
+    parent: str | None = Field(description="Name only, with stake if known, e.g. 'Hong Leong "
+                                           "Investment Holdings (49%)'.")
+    data_notes: str | None = NOTES
     related_listed_entities: list[str]
     latest_annual_report_year: int | None
     facts: list[DraftFact]
@@ -139,6 +151,7 @@ class Profile(BaseModel):
     parent: str | None = None
     related_listed_entities: list[str] = Field(default_factory=list)
     latest_annual_report_year: int | None = None
+    data_notes: str | None = None
     facts: list[Fact] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -156,18 +169,19 @@ class PeerCandidateDraft(BaseModel):
     name: str
     legal_name: str
     listed: bool
-    exchange: str | None
+    exchange: str | None = EXCHANGE
     ticker: str | None
     market_cap_sgd_millions: float | None
-    market_cap_as_of: str | None
-    headquarters: str | None
+    market_cap_as_of: str | None = AS_OF
+    headquarters: str | None = PLACE
     segments: list[str]
-    operating_countries: str | None
+    operating_countries: str | None = Field(description="A count or range, e.g. '6-10'.")
     main_markets: list[str]
-    total_assets: str | None
-    revenue: str | None
-    ebitda: str | None
-    employees: str | None
+    total_assets: str | None = FIGURE
+    revenue: str | None = FIGURE
+    ebitda: str | None = FIGURE
+    employees: str | None = PEOPLE
+    data_notes: str | None = NOTES
     related_entity_warning: str | None
     rationale: str
     key_limitation: str
@@ -199,6 +213,7 @@ class PeerCandidate(BaseModel):
     ebitda: str | None = None
     employees: str | None = None
     related_entity_warning: str | None = None
+    data_notes: str | None = None
     rationale: str = ""
     key_limitation: str = ""
     recommended: bool = False

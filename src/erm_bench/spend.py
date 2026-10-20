@@ -42,6 +42,7 @@ class Budget:
         self.prices: dict = cfg.get("prices_per_million_tokens", {})
         self.search_usd: float = cfg.get("web_search_usd", {}).get(setup.provider, 0.01)
         self.input_tokens = self.output_tokens = self.searches = 0
+        self.reserved = 0  # searches granted to calls still running
         self.usd = 0.0
         self._lock = threading.Lock()
         for record in records:
@@ -80,16 +81,27 @@ class Budget:
                 "'spending' in setup/v1/method.yaml to continue.")
 
     def allow_searches(self, wanted: int) -> int:
-        """How many web searches the next call may make; raises if none are left."""
+        """Reserve up to `wanted` web searches for the next call; raises if none are left.
+        Calls running in parallel each get a share, so together they can't pass the cap.
+        Pair with release() when the call ends."""
         self.check()
         if self.max_searches is None:
             return wanted
-        left = self.max_searches - self.searches
-        if left <= 0:
-            raise BudgetExceeded(
-                f"Web search cap reached for this run ({self._status()}). Raise the limits "
-                "under 'spending' in setup/v1/method.yaml to continue.")
-        return min(wanted, left)
+        with self._lock:
+            left = self.max_searches - self.searches - self.reserved
+            if left <= 0:
+                raise BudgetExceeded(
+                    f"Web search cap reached for this run ({self._status()}). Raise the limits "
+                    "under 'spending' in setup/v1/method.yaml to continue.")
+            granted = min(wanted, left)
+            self.reserved += granted
+            return granted
+
+    def release(self, granted: int) -> None:
+        """End a reservation; the searches actually made were counted by record()."""
+        if self.max_searches is not None:
+            with self._lock:
+                self.reserved = max(0, self.reserved - granted)
 
     def summary(self) -> dict:
         return {"usd": round(self.usd, 4), "max_usd": self.max_usd, "searches": self.searches,

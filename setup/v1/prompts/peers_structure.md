@@ -14,3 +14,4 @@ Rules:
 - market_cap_sgd_millions: a number in SGD millions, or null if not found.
 - Keep financial figures as short text with currency and year (e.g. "S$$3.1B (FY2024)"), or null.
 - operating_countries: a count or range as text (e.g. "6-10"), or null.
+- The figure fields are shown in small table cells, so keep them short and follow each field's format. Put caveats (unverified, sources disagree, currency conversion) in data_notes.

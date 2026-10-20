@@ -31,6 +31,7 @@ from .pipeline import (
     make_llm,
     parse_request,
     request_from_draft,
+    short_exchange,
 )
 from .product_a import GAP_LABELS
 from .schemas import BucketKey, Request
@@ -336,7 +337,7 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
                     "created_at": meta.get("created_at"), "updated_at": meta.get("updated_at"),
                     "client": profile.get("short_name") or meta.get("request", {}).get("client_name"),
                     "legal_name": profile.get("legal_name"),
-                    "listing": (f"{profile.get('exchange')}: {profile.get('ticker')}"
+                    "listing": (f"{short_exchange(profile.get('exchange'))}: {profile.get('ticker')}"
                                 if profile.get("listed") else None),
                     "reporting_year": meta.get("request", {}).get("reporting_year"),
                     "peers": [c["name"] for c in peers.get("candidates", []) if c.get("selected")],

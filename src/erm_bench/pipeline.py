@@ -16,7 +16,7 @@ import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from . import documents as docs
@@ -281,7 +281,7 @@ class Pipeline:
                             f"client): {', '.join(draft.related_listed_entities)}")
         if draft.market_cap_sgd_millions is None and draft.listed:
             warnings.append("Market capitalisation not found; the client's bucket is unknown.")
-        fields = draft.model_dump(exclude={"facts"})
+        fields = tidy_figures(draft.model_dump(exclude={"facts"}))
         return Profile(**fields, bucket=s.bucket_for(draft.market_cap_sgd_millions),
                        sector_guide=guide.key, facts=facts, warnings=warnings)
 
@@ -358,7 +358,7 @@ class Pipeline:
                        candidates=kept + [c for c in ai])
 
     def _candidate(self, peer_id: str, draft, sources, bucket: str | None) -> PeerCandidate:
-        cand = PeerCandidate(id=peer_id, **draft.model_dump(exclude={"citation_ids"}),
+        cand = PeerCandidate(id=peer_id, **tidy_figures(draft.model_dump(exclude={"citation_ids"})),
                              bucket=self.setup.bucket_for(draft.market_cap_sgd_millions),
                              sources=sources)
         if not cand.listed:
@@ -911,6 +911,45 @@ class Pipeline:
         self.store.log_review("export", path.name)
         self._set("exported")
         return path
+
+
+def short_exchange(text: str | None) -> str | None:
+    """'Singapore Exchange (SGX)' -> 'SGX'."""
+    if not text:
+        return None
+    code = re.search(r"\(([A-Z]{2,6})\)", text)
+    return code.group(1) if code else text.strip()
+
+
+def iso_date(text: str | None) -> str | None:
+    """The first date in the text as YYYY-MM-DD, or None."""
+    if not text:
+        return None
+    found = re.search(r"\d{4}-\d{2}-\d{2}", text)
+    if found:
+        return found.group(0)
+    found = re.search(r"\b(\d{1,2}) ([A-Z][a-z]{2,8}) (\d{4})\b", text)
+    if found:
+        for fmt in ("%d %b %Y", "%d %B %Y"):
+            try:
+                return datetime.strptime(found.group(0), fmt).date().isoformat()
+            except ValueError:
+                continue
+    return None
+
+
+def tidy_figures(fields: dict) -> dict:
+    """Keep the short display fields short; anything cut from a date goes into data_notes."""
+    notes = [fields.get("data_notes")] if fields.get("data_notes") else []
+    fields["exchange"] = short_exchange(fields.get("exchange"))
+    raw_date = fields.get("market_cap_as_of")
+    fields["market_cap_as_of"] = iso_date(raw_date)
+    if raw_date and raw_date.strip() != fields["market_cap_as_of"]:
+        notes.append(f"Market cap date: {raw_date.strip()}")
+    if fields.get("headquarters"):
+        fields["headquarters"] = fields["headquarters"].split("(")[0].strip(" ,;") or None
+    fields["data_notes"] = " · ".join(notes) or None
+    return fields
 
 
 def _slug(text: str) -> str:

@@ -187,3 +187,18 @@ def test_announcement_page_is_followed_to_its_pdf(run):
     assert doc.url == "https://sgx.test/ann/1/1_Gamma_REIT_Annual_Report_2025.pdf"
     assert doc.checks.company_match and doc.checks.has_risk_section
     assert p.availability("P3") == "good"
+
+
+def test_figures_are_tidied_for_display():
+    from erm_bench.pipeline import iso_date, short_exchange, tidy_figures
+
+    assert short_exchange("Singapore Exchange (SGX)") == "SGX" and short_exchange("HKEX") == "HKEX"
+    assert iso_date("2026-10-01 (third-party aggregator)") == "2026-10-01"
+    assert iso_date("30 Sep 2026 (GuruFocus)") == "2026-09-30"
+    assert iso_date("Approx. Oct 2026") is None
+    out = tidy_figures({"exchange": "Singapore Exchange (SGX)", "data_notes": "Assets unverified",
+                        "market_cap_as_of": "30 Sep 2026 (GuruFocus)",
+                        "headquarters": "Singapore (registered office: 9 Raffles Place)"})
+    assert out["exchange"] == "SGX" and out["market_cap_as_of"] == "2026-09-30"
+    assert out["headquarters"] == "Singapore"
+    assert out["data_notes"] == "Assets unverified · Market cap date: 30 Sep 2026 (GuruFocus)"
