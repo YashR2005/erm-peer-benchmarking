@@ -17,6 +17,7 @@ import uvicorn
 from erm_bench.api import create_app
 from erm_bench.standard_setup import StandardSetup
 
+from .conftest import _without_peer_cap
 from .fakes import FakeLLM, fake_fetch
 
 
@@ -43,6 +44,8 @@ def main() -> None:
     args = parser.parse_args()
     runs_dir = Path(tempfile.mkdtemp(prefix="erm-e2e-"))
     llm = SlowFakeLLM(args.delay)
+    # The browser tests cover three or more peer candidates: no trial peer cap.
+    StandardSetup.load = classmethod(_without_peer_cap)
     app = create_app(StandardSetup.load(), runs_dir=runs_dir, llm_factory=lambda s, store: llm,
                      fetch=fake_fetch, static_dir=None)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")

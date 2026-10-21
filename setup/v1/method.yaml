@@ -3,13 +3,13 @@
 version: v1
 name: ERM benchmark method v1 (phase 1, Product A)
 
-# Which model runs the AI stages: Claude Sonnet 5.5 by default. ERM_LLM_MODEL in .env can switch
-# to Haiku 5.5. Only the models in allowed_models can run: anything else (e.g. Opus) stops the app
+# Which model runs the AI stages: Claude Haiku 5.5 by default (cheap trial). ERM_LLM_MODEL in .env
+# overrides it. Only the models in allowed_models can run: anything else (e.g. Opus) stops the app
 # at startup. Every run records the model it used.
 llm:
   provider: anthropic
   models:
-    anthropic: claude-sonnet-5-5
+    anthropic: claude-haiku-5-5
     openrouter: nvidia/nemotron-3.5-super-vl   # not in allowed_models, so it can't run
   allowed_models: [claude-sonnet-5-5, claude-haiku-5-5]
   anthropic:
@@ -59,18 +59,30 @@ time_limits:
 # Spending limits while testing. A run that reaches a limit stops with a message before the
 # next model call; raise them here if a run needs more. Costs are estimates from the token
 # counts the API reports and these prices (USD).
+# Each Claude call is checked before it is sent (worst-case estimate, reserved so parallel calls
+# can't overshoot together) and after (the usage the API reports).
 spending:
-  max_usd_per_run: 3.00
+  max_usd_per_run: 2.00
+  max_calls_per_run: 80         # second safety net (llm.py also has a hard cap of 60)
   max_web_searches_per_run: 30  # a typical run uses ~24 (profile 4, peers 6, scans 2 each)
   web_search_usd: {anthropic: 0.01, openrouter: 0.007}
   prices_per_million_tokens:
     claude-opus-5-5: {input: 4.00, output: 20.00}
     claude-sonnet-5-5: {input: 2.00, output: 10.00}
-    claude-haiku-5-5: {input: 0.10, output: 0.50}
+    # A request is priced on its own whole prompt (input + cache reads + cache writes): above
+    # 100k tokens every token in it costs the long_context rate. Cache writes: 1.25x input.
+    claude-haiku-5-5:
+      input: 0.10
+      output: 0.50
+      cache_read: 0.01
+      cache_write: 0.125
+      long_context: {above_input_tokens: 100000, input: 0.50, output: 2.50, cache_read: 0.05,
+                     cache_write: 0.625}
     nvidia/nemotron-3.5-super-vl: {input: 0.10, output: 0.40}
 
 peers:
-  default_count: 3
+  default_count: 2
+  max_count: 2              # trial cap: 1 client + at most 2 peers scanned and benchmarked
   candidate_multiplier: 2   # propose about twice as many candidates as requested
   listed_only: true
 

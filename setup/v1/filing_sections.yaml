@@ -4,6 +4,7 @@ annual_report:
   # Headings that start a risk section (case-insensitive regex).
   headings:
     - '\benterprise risk management\b'
+    - '\b(enterprise )?risk (management )?framework\b'
     - '\brisk management\b'
     - '\brisk governance\b'
     - '\bkey risks?\b'

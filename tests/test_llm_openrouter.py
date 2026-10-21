@@ -131,12 +131,13 @@ def test_only_sonnet_or_haiku_can_run(setup, monkeypatch):
     monkeypatch.delenv("ERM_LLM_PROVIDER", raising=False)
     monkeypatch.delenv("ERM_LLM_MODEL", raising=False)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
-    llm = make_llm(setup)                                       # default: Sonnet 5.5
-    assert isinstance(llm, ClaudeLLM) and llm.model == "claude-sonnet-5-5" and llm.server_fallback
+    llm = make_llm(setup)                                       # default: Haiku 5.5
+    assert isinstance(llm, ClaudeLLM) and llm.model == "claude-haiku-5-5"
+    assert not llm.server_fallback                              # Haiku has none
 
-    monkeypatch.setenv("ERM_LLM_MODEL", "claude-haiku-5-5")
+    monkeypatch.setenv("ERM_LLM_MODEL", "claude-sonnet-5-5")
     llm = make_llm(setup)
-    assert llm.model == "claude-haiku-5-5" and not llm.server_fallback   # Haiku has none
+    assert llm.model == "claude-sonnet-5-5" and llm.server_fallback
 
     monkeypatch.setenv("ERM_LLM_MODEL", "claude-opus-5-5")
     with pytest.raises(ValueError, match="not allowed"):

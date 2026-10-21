@@ -50,6 +50,37 @@ def test_locate_by_page_heading(setup):
     assert found.has_section and found.method == "headings"
 
 
+RISKY = " Each risk owner reviews this risk, its risk rating and the risk response. " * 2
+
+
+def test_a_page_citing_a_financial_risk_note_does_not_end_the_section(setup):
+    """UOL 2025: the page after the ERM heading mentions the financial-risk note, and the risk
+    list itself comes on the pages after that."""
+    pages = ["Cover",
+             "Enterprise Risk Management Framework\nThe Group's ERM framework." + RISKY,
+             "Senior management are key risk owners. See financial risk management objectives "
+             "and policies in the notes." + RISKY,
+             "• Operational Risks\nSafety comes first." + RISKY,
+             "• Information Technology Risks\nCyber attacks." + RISKY,
+             "Directors' statement\nThe directors present their statement."]
+    found = docs.locate_risk_sections(pages, [], setup.filing_sections["annual_report"])
+    assert found.pages == [2, 3, 4, 5]
+
+
+def test_wrapped_body_text_is_not_a_heading(setup):
+    """Keppel 2025: governance pages whose lines wrap as 'risk management systems and', and a
+    risk section headed 'Enterprise Risk Framework'."""
+    pages = ["Cover",
+             "internal controls, risk management,\nfinancial reporting and compliance, and satisfy "
+             "itself as to the adequacy of such processes.",
+             "1.20 a. Review the Board's\nrisk management systems and\nstate whether it concurs.",
+             "ENTERPRISE RISK FRAMEWORK\nThe Board has set three risk tolerance principles." + RISKY,
+             "FINANCIAL RISKS\nFinancial and Funding Risks." + RISKY,
+             "Compliance\nWe take a holistic approach."]
+    found = docs.locate_risk_sections(pages, [], setup.filing_sections["annual_report"])
+    assert found.pages == [4, 5] and found.method == "headings"
+
+
 def test_no_risk_section(setup):
     pages = ["Cover", "Our business", "Financial statements"]
     found = docs.locate_risk_sections(pages, [], setup.filing_sections["annual_report"])

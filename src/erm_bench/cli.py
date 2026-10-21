@@ -3,6 +3,7 @@
   erm-bench run "City Developments" --year 2025 --until export
   erm-bench resume <run_id> --until findings
   erm-bench show <run_id>
+  erm-bench run "City Developments" --dry-run      # fake client: what a real run would use
 """
 
 from __future__ import annotations
@@ -68,7 +69,10 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--peers", type=int)
     run.add_argument("--bucket", choices=["large", "mid", "small"])
     run.add_argument("--sector")
-    run.add_argument("--until", choices=STAGES, default="scope")
+    run.add_argument("--until", choices=STAGES, help="default: scope (export with --dry-run)")
+    run.add_argument("--dry-run", action="store_true",
+                     help="run every stage with a fake Claude client and print the calls, tokens "
+                          "and cost a real run would use; nothing is sent to the API")
 
     resume = sub.add_parser("resume", help="continue a run")
     resume.add_argument("run_id")
@@ -96,9 +100,13 @@ def main(argv: list[str] | None = None) -> int:
         request = Request(client_name=args.client, reporting_year=args.year, sector=args.sector,
                           market_cap_bucket=args.bucket,
                           peer_count=args.peers or setup.method["peers"]["default_count"])
+        if args.dry_run:
+            from .dryrun import dry_run
+
+            return dry_run(request, args.until or "export", advance)
         p = Pipeline.start(request, setup, progress=progress)
         print(f"Run {p.store.run_id}", file=sys.stderr)
-        advance(p, args.until)
+        advance(p, args.until or "scope")
     elif args.command == "resume":
         p = Pipeline.resume(args.run_id, progress=progress)
         advance(p, args.until)

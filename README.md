@@ -19,7 +19,7 @@ Confidential Marsh material (the vision document, meeting notes, sample reports)
 
 ## Running it
 
-Needs Python 3.11+, [uv](https://docs.astral.sh/uv/) and a Claude API key (`ANTHROPIC_API_KEY` in `.env`). The model is **Claude Sonnet 5.5** by default; set `ERM_LLM_MODEL=claude-haiku-5-5` in `.env` for the cheaper Haiku 5.5. Only these two are allowed (`llm.allowed_models` in `setup/v1/method.yaml`): any other model stops the app at startup. Web search uses Claude's web search tool with citations.
+Needs Python 3.11+, [uv](https://docs.astral.sh/uv/) and a Claude API key (`ANTHROPIC_API_KEY` in `.env`). The model is **Claude Haiku 5.5** by default (cheap trial); set `ERM_LLM_MODEL=claude-sonnet-5-5` in `.env` for Sonnet 5.5. Only these two are allowed (`llm.allowed_models` in `setup/v1/method.yaml`): any other model stops the app at startup. Web search uses Claude's web search tool with citations.
 
 ```bash
 uv sync
@@ -38,6 +38,13 @@ uv run erm-bench run "City Developments" --year 2025 --until export
 uv run erm-bench show <run id>
 ```
 
+Before a real run, a dry run goes through every stage with a fake Claude client (no key, no
+spend) and prints the calls, tokens and worst-case cost a real run would use:
+
+```bash
+uv run erm-bench run "City Developments" --dry-run
+```
+
 Tests, all offline with a fake model and generated PDFs:
 
 ```bash
@@ -47,9 +54,15 @@ cd frontend && npx playwright test         # browser tests (needs Google Chrome)
 
 ## Spending and time limits
 
-Every run has a hard cap, set under `spending` in `setup/v1/method.yaml`: **$3.00 and 30 web
-searches per run** while we test. A run that reaches either stops with a message before its next
-model call; raise the limit and resume to continue. Research steps also have small search and
+Every run has a hard cap, set under `spending` in `setup/v1/method.yaml`: **$2.00, 80 model calls
+and 30 web searches per run** while we test. Each call's worst-case cost is checked before it is
+sent and its reported usage counted after; a run stops with a message before a call that could
+take it over, and resume continues once the limit is raised. `src/erm_bench/llm.py` adds hard
+limits of its own: **60 calls per run, at most 3 at once, 32,000 output tokens per call, and no
+prompt over 100k tokens** (Haiku 5.5 charges 5x above that; a risk section that big is skipped
+and noted). A 429 is retried after its `retry-after` delay, 3 attempts in all; a spend-limit error
+stops the run at once. Every call prints a cost line, and each stage ends with a summary. The
+trial scans and benchmarks **1 client and at most 2 peers** (`peers.max_count`). Research steps also have small search and
 fetch budgets, and fetched pages are cut to 5,000 tokens: research only finds sources, and our
 code reads the PDFs. Each run shows its estimated spend in the app.
 

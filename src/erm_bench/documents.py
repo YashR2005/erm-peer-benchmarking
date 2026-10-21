@@ -209,6 +209,17 @@ def _heading_lines(page_text: str, max_lines: int = 10) -> list[str]:
     return [normalize(ln) for ln in lines[:max_lines] if len(ln) <= 90]
 
 
+def _heading_candidates(page_text: str, max_lines: int = 10) -> list[str]:
+    """Short lines near the top of the page, without leading bullets or numbering, plus each
+    pair of adjacent lines joined (headings set as 'RISK' over 'MANAGEMENT')."""
+    lines = [re.sub(r"^[\W\d_]+", "", ln) for ln in _heading_lines(page_text, max_lines)]
+    joined = [f"{a} {b}" for a, b in zip(lines, lines[1:], strict=False)]
+    return [ln for ln in lines + joined if 0 < len(ln) <= 60]
+
+
+MIN_RISK_MENTIONS = 6   # a page that says "risk" this often still reads as risk discussion
+
+
 def _is_contents_page(page_text: str) -> bool:
     """A contents page lists section titles; its 'Risk Management' line is not a heading."""
     return any(re.match(r"(table of )?contents\b", line) for line in _heading_lines(page_text, 5))
@@ -225,6 +236,15 @@ def locate_risk_sections(pages: list[str], toc: list[tuple[int, str, int]], conf
     def is_heading(text: str) -> bool:
         t = normalize(text)
         return any(h.search(t) for h in headings) and not any(d in t for d in downweight)
+
+    def starts_heading(line: str) -> bool:
+        """A page heading starts its line: 'Risk Management', not a sentence or a committee's
+        name ('internal controls, risk management, ...', 'Audit and Risk Committee')."""
+        return any(h.match(line) for h in headings) and not any(d in line for d in downweight)
+
+    def is_whole_heading(line: str) -> bool:
+        """The line is nothing but a heading ('Risk Management'), not a wrapped sentence."""
+        return any(h.fullmatch(line.strip(" :.-")) for h in headings)
 
     # 1. Bookmarks: a matching entry covers its pages up to the next entry at the same or
     #    a higher level.
@@ -244,21 +264,31 @@ def locate_risk_sections(pages: list[str], toc: list[tuple[int, str, int]], conf
     heading_pages: set[int] = set()
     for i, text in enumerate(norm):
         in_notes = any(d in text for d in downweight)   # e.g. a financial-statement note
-        if not in_notes and not _is_contents_page(pages[i]) and any(
-                is_heading(line) for line in _heading_lines(pages[i])):
+        keyword_hits = sum(text.count(k) for k in keywords)
+        # A heading on a page that barely discusses risk is body text that wrapped onto a new
+        # line ('risk management systems and ...'), not the start of a risk section.
+        discusses_risk = text.count("risk") >= MIN_RISK_MENTIONS or keyword_hits >= 2
+        candidates = [ln for ln in _heading_candidates(pages[i]) if starts_heading(ln)]
+        if not in_notes and not _is_contents_page(pages[i]) and candidates and (
+                discusses_risk or any(is_whole_heading(ln) for ln in candidates)):
             heading_pages.add(i + 1)
             scores[i] += 5
-        scores[i] += sum(text.count(k) for k in keywords)
+        scores[i] += keyword_hits
         scores[i] += sum(1 for h in headings if h.search(text))
         if any(d in text for d in downweight):
             scores[i] *= 0.3
 
-    # A heading page pulls in following pages while they still look like risk discussion.
+    def reads_as_risk(p: int) -> bool:
+        return scores[p - 1] >= 2 or norm[p - 1].count("risk") >= MIN_RISK_MENTIONS
+
+    # A heading page pulls in following pages while they still look like risk discussion: risk
+    # keywords, or "risk" said often (so a page that also cites a financial-risk note, and is
+    # scored down for it, doesn't end the section early).
     heading_runs: set[int] = set()
     for start in sorted(heading_pages):
         heading_runs.add(start)
-        for p in range(start + 1, min(start + 8, n) + 1):
-            if scores[p - 1] < 2:
+        for p in range(start + 1, min(start + 10, n) + 1):
+            if not reads_as_risk(p):
                 break
             heading_runs.add(p)
 

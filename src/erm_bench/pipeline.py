@@ -12,7 +12,9 @@ UI-agnostic: the chat app and the CLI both drive this class.
 
 from __future__ import annotations
 
+import functools
 import re
+import sys
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,7 +23,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from . import documents as docs
-from .llm import LLM, ClaudeLLM
+from .llm import LLM, CallCounter, ClaudeLLM, PromptTooLarge
 from .product_a import (
     CLIENT,
     Company,
@@ -72,19 +74,42 @@ class ScopeError(ValueError):
     pass
 
 
-def make_llm(setup: StandardSetup, store: RunStore | None = None) -> LLM:
-    """The backend named in the standard setup (or ERM_LLM_PROVIDER). With a run store, the
-    run's spending cap applies, counting what the run has already spent."""
+def reports_llm_use(stage: str):
+    """Print the run's model calls, tokens, cost and failed steps when the stage ends."""
+    def wrap(method):
+        @functools.wraps(method)
+        def run(self: Pipeline, *args, **kwargs):
+            outcome = "finished"
+            try:
+                return method(self, *args, **kwargs)
+            except BaseException as e:
+                outcome = f"stopped: {e}"
+                raise
+            finally:
+                lines = getattr(self.llm, "summary_lines", None)
+                if lines:
+                    print(f"\n=== Run {self.store.run_id} · {stage} {outcome} ===\n"
+                          + "\n".join(lines()) + "\n", file=sys.stderr, flush=True)
+        return run
+    return wrap
+
+
+def make_llm(setup: StandardSetup, store: RunStore | None = None, client=None) -> LLM:
+    """The backend named in the standard setup (or ERM_LLM_PROVIDER). The run's spending and
+    call caps apply, counting what the run (with a store) has already used. `client` replaces
+    the Claude API client (the dry run passes a fake)."""
     log = store.log_llm_call if store else None
-    budget = Budget(setup, store.read_log("llm_calls.jsonl")) if store else None
+    records = store.read_log("llm_calls.jsonl") if store else []
+    budget = Budget(setup, records)
     system = setup.prompt("system")
     if setup.provider == "anthropic":
         cfg = setup.provider_settings()
-        return ClaudeLLM(model=setup.model, system=system, log=log,
+        return ClaudeLLM(model=setup.model, system=system, log=log, client=client,
                          web_search_tool=cfg.get("web_search", "web_search_20250305"),
                          web_fetch_tool=cfg.get("web_fetch", "web_fetch_20250910"),
                          max_fetch_tokens=setup.max_fetch_tokens, budget=budget,
-                         server_fallback=setup.model in cfg.get("server_fallback_models", []))
+                         server_fallback=setup.model in cfg.get("server_fallback_models", []),
+                         calls=CallCounter(already=sum(len(r.get("usage") or []) for r in records)))
     if setup.provider == "openrouter":
         from .llm_openrouter import OpenRouterLLM
 
@@ -136,7 +161,7 @@ class Findings:
 class Pipeline:
     def __init__(self, store: RunStore, setup: StandardSetup, llm: LLM,
                  fetch: docs.Fetcher | None = None, progress: Progress | None = None,
-                 max_workers: int = 4, stop: threading.Event | None = None):
+                 max_workers: int = 3, stop: threading.Event | None = None):
         self.store = store
         self.setup = setup
         self.llm = llm
@@ -156,6 +181,8 @@ class Pipeline:
     @classmethod
     def start(cls, request: Request, setup: StandardSetup, llm_factory: LLMFactory = None,
               runs_dir: Path = DEFAULT_RUNS_DIR, **kwargs) -> Pipeline:
+        if (cap := setup.method["peers"].get("max_count")) and request.peer_count > cap:
+            request = request.model_copy(update={"peer_count": cap})
         store = RunStore.create(request.client_name, {
             "setup_version": setup.version, "method": setup.name, "provider": setup.provider,
             "model": setup.model, "request": request,
@@ -218,6 +245,7 @@ class Pipeline:
     # ------------------------------------------------------------------
     # Stage 2 · Research
 
+    @reports_llm_use("research")
     def research(self) -> None:
         """Profile, peer scan and light disclosure scan. Each piece is saved when it finishes,
         so running this again after a failure or time limit continues where it stopped."""
@@ -349,6 +377,8 @@ class Pipeline:
 
         # Recommended first; select the requested number among AI candidates.
         ai = sorted([c for c in candidates if c.added_by == "ai"], key=lambda c: not c.recommended)
+        if cap := s.method["peers"].get("max_count"):  # trial cap: scan no more peers than this
+            ai = ai[:max(cap - len(kept), 0)]
         room = max(peer_count - sum(1 for k in kept if k.selected), 0)
         for i, c in enumerate(ai):
             c.selected = i < room
@@ -542,6 +572,9 @@ class Pipeline:
 
     def set_peer_count(self, count: int) -> None:
         self._require_status("awaiting_scope")
+        if (cap := self.setup.method["peers"].get("max_count")) and count > cap:
+            raise ScopeError(f"At most {cap} peers (peers.max_count in "
+                             f"setup/{self.setup.version}/method.yaml).")
         peers = self.peers
         before = peers.peer_count
         peers.peer_count = count
@@ -670,6 +703,9 @@ class Pipeline:
         selected = self.peers.selected
         if not selected:
             raise ScopeError("Select at least one peer before locking the scope.")
+        if (cap := self.setup.method["peers"].get("max_count")) and len(selected) > cap:
+            raise ScopeError(f"Select at most {cap} peers (peers.max_count in "
+                             f"setup/{self.setup.version}/method.yaml).")
         ids = [CLIENT] + [p.id for p in selected]
         chosen = {cid: (d.id if (d := self.primary_document(cid)) else None) for cid in ids}
         scope = {"locked_at": now_iso(), "peer_ids": [p.id for p in selected],
@@ -682,6 +718,7 @@ class Pipeline:
     # ------------------------------------------------------------------
     # Stage 4 · Analysis
 
+    @reports_llm_use("analysis")
     def analyse(self) -> None:
         """Read each company's risk section and map the results. Each company's extraction is
         saved when it finishes, so running this again continues where it stopped."""
@@ -768,11 +805,16 @@ class Pipeline:
         s = self.setup
         pages = docs.cached_pages(self.store.sources_dir / f"{doc.sha256}.pdf",
                                   self.store.pages_dir)
-        draft = self.llm.structured(
-            stage=f"extract:{company.id}", prompt_name=s.prompt_version("extract_risks"),
-            prompt=s.prompt("extract_risks", company_name=company.name, doc_title=doc.title,
-                            pages=docs.page_tagged_text(pages, doc.risk_pages)),
-            schema=ExtractionDraft, effort=s.effort("extract"))
+        try:
+            draft = self.llm.structured(
+                stage=f"extract:{company.id}", prompt_name=s.prompt_version("extract_risks"),
+                prompt=s.prompt("extract_risks", company_name=company.name, doc_title=doc.title,
+                                pages=docs.page_tagged_text(pages, doc.risk_pages)),
+                schema=ExtractionDraft, effort=s.effort("extract"))
+        except PromptTooLarge as e:  # not sent: skip this company's extraction and say so
+            self.progress(str(e))
+            return Extraction(company_id=company.id, doc_id=doc.id, has_risk_disclosure=False,
+                              note=f"Skipped: the risk section is over 100k tokens. {e}")
         norm = normalize_pages(pages)
         v = s.method["verify"]
 
