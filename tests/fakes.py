@@ -271,3 +271,47 @@ def scope(action, targets=(), value=None, reply="OK"):
 def findings(action, targets=(), value=None, reply="OK"):
     return FindingsCommands(
         commands=[FindingsCommand(action=action, targets=list(targets), value=value)], reply=reply)
+
+
+class LoggedFakeLLM(FakeLLM):
+    """A FakeLLM that writes llm_calls.jsonl rows like the real client, so the steps view has
+    stages, usage, durations and outputs to show. Each instance keeps its own `calls`."""
+
+    def __init__(self, log=None, seconds: float = 0.5):
+        super().__init__()
+        self.log = log
+        self.seconds = seconds
+
+    def _write(self, stage, prompt_name, effort, output, searches=0):
+        if self.log:
+            self.log({"stage": stage, "prompt": prompt_name, "model": "fake-model", "effort": effort,
+                      "input_sha256": "0" * 16, "stop_reason": "end_turn", "request_id": None,
+                      "usage": [{"input_tokens": 1000, "output_tokens": 200,
+                                 "server_tool_use": {"web_search_requests": searches}}],
+                      "seconds": self.seconds, "output": output})
+
+    def research(self, *, stage, prompt_name, prompt, effort, max_searches=5, max_fetches=2):
+        result = super().research(stage=stage, prompt_name=prompt_name, prompt=prompt,
+                                  effort=effort, max_searches=max_searches, max_fetches=max_fetches)
+        self._write(stage, prompt_name, effort,
+                    {"text": result.text, "citations": [c.model_dump() for c in result.citations]}, 2)
+        return result
+
+    def structured(self, *, stage, prompt_name, prompt, schema, effort):
+        result = super().structured(stage=stage, prompt_name=prompt_name, prompt=prompt,
+                                    schema=schema, effort=effort)
+        self._write(stage, prompt_name, effort, result.model_dump(mode="json"))
+        return result
+
+
+def logged_factory():
+    """(factory, instances): every Pipeline built from the factory gets a fresh LoggedFakeLLM that
+    logs to its own run store; `instances` lets a test count the calls made by each."""
+    instances: list[LoggedFakeLLM] = []
+
+    def factory(setup, store):
+        llm = LoggedFakeLLM(store.log_llm_call if store else None)
+        instances.append(llm)
+        return llm
+
+    return factory, instances

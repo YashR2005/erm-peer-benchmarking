@@ -37,6 +37,7 @@ from .product_a import GAP_LABELS
 from .schemas import BucketKey, Request
 from .spend import Budget
 from .standard_setup import REPO_ROOT, StandardSetup
+from .steps import list_steps, step_detail
 from .store import DEFAULT_RUNS_DIR, RunStore, now_iso
 from .timing import StopRequested
 
@@ -399,6 +400,24 @@ def create_app(setup: StandardSetup | None = None, runs_dir: Path = DEFAULT_RUNS
     @api.get("/runs/{run_id}")
     def get_run(run_id: str) -> dict:
         return state(run_id)
+
+    # -- Steps (read-only: derived from the run folder) --------------------------------
+
+    @api.get("/runs/{run_id}/steps")
+    def get_steps(run_id: str) -> dict:
+        p = pipeline(run_id, with_llm=False)
+        job = jobs.get(run_id)
+        return list_steps(p.store, p.setup, job.to_dict() if job else None)
+
+    @api.get("/runs/{run_id}/steps/{step_id}")
+    def get_step(run_id: str, step_id: str, full: bool = False, raw: bool = False) -> dict:
+        p = pipeline(run_id, with_llm=False)
+        job = jobs.get(run_id)
+        detail = step_detail(p.store, p.setup, step_id, job.to_dict() if job else None,
+                             full=full, raw=raw)
+        if detail is None:
+            raise HTTPException(404, f"No step '{step_id}' in this run.")
+        return detail
 
     @api.post("/runs/{run_id}/resume")
     def resume(run_id: str) -> dict:

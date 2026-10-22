@@ -137,3 +137,40 @@ export type Setup = {
   time_limits: { research?: number; analysis?: number; per_call?: number };
   verify: { min_score: number; min_quote_chars: number };
 };
+
+// Steps view (src/erm_bench/steps.py)
+export type StepStatus = 'not started' | 'done' | 'running' | 'stopped' | 'failed';
+
+export type StepRow = {
+  id: string; label: string; group: string; status: StepStatus; reason: string; summary: string;
+  depends_on: string[]; company: string | null; seconds: number | null; cost_usd: number | null;
+  finished_at: string | null; edits: number; earlier_calls: number; can_rewind: boolean;
+};
+
+export type StepList = {
+  run_id: string; status: RunStatus; groups: { key: string; label: string }[]; steps: StepRow[];
+  live_step: string | null; running: boolean; history: { folder: string; step: string | null; at: string | null; files: string[] }[];
+};
+
+export type CallView = {
+  stage: string; prompt: string; model: string; effort: string; finished_at: string; seconds: number | null;
+  cost_usd: number; input_tokens: number; output_tokens: number; searches: number; stop_reason: string;
+  index: number; output: unknown; output_truncated: boolean; output_chars: number;
+};
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Obj = Record<string, any>;
+
+export type StepDetail = {
+  id: string; label: string; group: string; status: StepStatus; reason: string; summary: string;
+  depends_on: string[]; files: string[]; company: string | null;
+  inputs: { label: string; value: unknown }[];
+  output: ({ kind: string } & Obj) | null;
+  time: { seconds_in_model_calls: number | null; finished_at: string | null; note: string | null };
+  cost: { calls: number; cost_usd: number; input_tokens: number; output_tokens: number; searches: number;
+          seconds: number; earlier_calls: { calls: number; cost_usd: number } | null };
+  calls: CallView[]; earlier_calls: CallView[]; warnings: string[];
+  actions: { at: string; action: string; target: string; before: unknown; after: unknown; reason: string; actor: string }[];
+  history: { folder: string; step: string | null; at: string | null }[];
+  raw?: Obj;
+};

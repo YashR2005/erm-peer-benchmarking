@@ -1,4 +1,4 @@
-import type { BucketKey, RunState, RunSummary, Setup } from './types';
+import type { BucketKey, RunState, RunSummary, Setup, StepDetail, StepList } from './types';
 
 // Relative URLs: Vite proxies /api to the Python API in development, and the API serves the
 // built frontend in production.
@@ -26,6 +26,10 @@ export const api = {
   setup: (signal?: AbortSignal) => call<Setup>('/api/setup', { signal }),
   runs: (signal?: AbortSignal) => call<RunSummary[]>('/api/runs', { signal }),
   run: (id: string, signal?: AbortSignal) => call<RunState>(`/api/runs/${id}`, { signal }),
+
+  steps: (id: string, signal?: AbortSignal) => call<StepList>(`/api/runs/${id}/steps`, { signal }),
+  step: (id: string, stepId: string, opts: { full?: boolean; raw?: boolean } = {}, signal?: AbortSignal) =>
+    call<StepDetail>(`/api/runs/${id}/steps/${encodeURIComponent(stepId)}?full=${!!opts.full}&raw=${!!opts.raw}`, { signal }),
 
   createRun: (body: { client_name: string; reporting_year: number | null; peer_count: number;
                       market_cap_bucket: BucketKey | null; focus_regions: string[]; notes: string }) =>

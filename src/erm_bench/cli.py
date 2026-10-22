@@ -3,6 +3,7 @@
   erm-bench run "City Developments" --year 2025 --until export
   erm-bench resume <run_id> --until findings
   erm-bench show <run_id>
+  erm-bench steps <run_id>
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from dotenv import load_dotenv
 from .pipeline import Pipeline
 from .schemas import Request
 from .standard_setup import StandardSetup
+from .store import RunStore
 from .views import Reply, findings_replies, scope_replies
 
 STAGES = ["scope", "findings", "export"]
@@ -57,6 +59,25 @@ def show(p: Pipeline) -> None:
         print_replies(findings_replies(p))
 
 
+def print_steps(run_id: str) -> int:
+    from .steps import list_steps
+
+    store = RunStore.open(run_id)
+    setup = StandardSetup.load(store.meta["setup_version"])
+    data = list_steps(store, setup)
+    print(f"Run {run_id}: {data['status']}\n")
+    groups = {g["key"]: g["label"] for g in data["groups"]}
+    shown = None
+    for s in data["steps"]:
+        if s["group"] != shown:
+            shown = s["group"]
+            print(f"[{groups[shown]}]")
+        cost = f"${s['cost_usd']:.3f}" if s["cost_usd"] is not None else "-"
+        secs = f"{s['seconds']:.0f}s" if s["seconds"] is not None else "-"
+        print(f"  {s['id']:<20} {s['status']:<11} {secs:>6} {cost:>8}  {s['summary']}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(prog="erm-bench")
@@ -77,6 +98,9 @@ def main(argv: list[str] | None = None) -> int:
     show_cmd = sub.add_parser("show", help="print a run's current checkpoint")
     show_cmd.add_argument("run_id")
 
+    steps_cmd = sub.add_parser("steps", help="print what happened at each step of a run")
+    steps_cmd.add_argument("run_id")
+
     serve = sub.add_parser("serve", help="run the web API (and the built frontend, if any)")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
@@ -89,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
 
         uvicorn.run(create_app(), host=args.host, port=args.port)
         return 0
+    if args.command == "steps":
+        return print_steps(args.run_id)
     progress = lambda m: print(f"… {m}", file=sys.stderr)  # noqa: E731
 
     if args.command == "run":

@@ -1,10 +1,11 @@
-import { ArrowLeft, CirclePause, Download, FileSpreadsheet, LoaderCircle, MessageSquareText, Play, RotateCcw, Square, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, CirclePause, Download, FileSpreadsheet, LoaderCircle, MessageSquareText, Play, ListTree, RotateCcw, Square, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { Badge } from '../components/Badge';
 import { Assistant } from '../components/run/Assistant';
 import { FindingsView } from '../components/run/Findings';
 import { ProgressCard, Stepper } from '../components/run/Progress';
+import { StepsPanel } from '../components/run/Steps';
 import { ScopeView } from '../components/run/Scope';
 import { modelLabel } from '../components/Sidebar';
 import { useToast } from '../components/Toast';
@@ -45,6 +46,7 @@ export function RunPage({ runId, setup, navigate, onChanged }:
   const [pending, setPending] = useState(false);
   const [poll, setPoll] = useState(0);
   const [assistantOpen, setAssistantOpen] = useState(true);
+  const [stepsOpen, setStepsOpen] = useState(false);
   const wasRunning = useRef<string | null>(null);
 
   // Poll while a background job runs, and announce how it ended.
@@ -143,6 +145,9 @@ export function RunPage({ runId, setup, navigate, onChanged }:
               {job?.stopping ? 'Stopping…' : 'Stop'}</button>
           : interrupted && <button className="btn primary" disabled={pending} onClick={() => perform(() => api.resume(run.run_id))}>
               <Play size={15} fill="currentColor" />Resume</button>}
+        <button className="btn" onClick={() => setStepsOpen(open => !open)} aria-pressed={stepsOpen}>
+          <ListTree size={16} />Steps
+        </button>
         <button className="btn" onClick={() => setAssistantOpen(open => !open)} aria-pressed={assistantOpen}>
           <MessageSquareText size={16} />{assistantOpen ? 'Hide assistant' : 'Assistant'}
         </button>
@@ -155,6 +160,9 @@ export function RunPage({ runId, setup, navigate, onChanged }:
 
     <div className={`workspace ${assistantOpen ? '' : 'no-assistant'}`}>
       <div className="stack" style={{ minWidth: 0 }}>
+        {stepsOpen && <StepsPanel runId={run.run_id} busy={running}
+          refreshKey={`${run.status}|${run.updated_at}|${state.exports.length}`}
+          onClose={() => setStepsOpen(false)} />}
         {running && job && <ProgressCard job={job} client={state.request.client_name} limits={setup?.time_limits}
           onStop={() => perform(() => api.stop(run.run_id))} />}
         {!running && job?.error && <div className="note red" role="alert"><TriangleAlert size={16} />
